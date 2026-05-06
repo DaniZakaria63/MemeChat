@@ -23,7 +23,8 @@ android {
                     project.properties["URI_PALIGEMMA_MIX_224"].toString()
         )
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "fun.walawe.modelpull.CustomTestRunner"
+        testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
         consumerProguardFiles("consumer-rules.pro")
     }
     compileOptions {
