@@ -24,4 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "MemeChat"
 include(":app")
- 
+include(":memelm")
+include(":modelpull")

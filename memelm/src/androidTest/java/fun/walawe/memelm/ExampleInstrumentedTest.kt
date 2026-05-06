@@ -1,4 +1,5 @@
-package `fun`.walawe.memechat
+package `fun`.walawe.memelm
+
 
 class ExampleInstrumentedTest {
 }
