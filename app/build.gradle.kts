@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -16,8 +17,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "fun.walawe.memechat.CustomTestRunner"
+        testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
     }
 
     buildTypes {
@@ -40,5 +41,25 @@ android {
 }
 
 dependencies {
+    implementation(project(":modelpull"))
+    implementation(libs.androidx.coroutine)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.work.hilt)
+    implementation(libs.androidx.hilt.navigation.compose)
+    ksp(libs.androidx.hilt.compiler)
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+
+    implementation(libs.timber)
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.hilt.android.testing)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.work.testing)
+    androidTestImplementation(libs.jetbrains.coroutine.test)
 }
