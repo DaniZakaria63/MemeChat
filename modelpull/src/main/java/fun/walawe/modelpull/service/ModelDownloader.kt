@@ -6,6 +6,8 @@ import `fun`.walawe.modelpull.BuildConfig
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CachePaligemmaModel
+import `fun`.walawe.modelpull.model.DEFAULT_LAST_MODEL_NAME
+import `fun`.walawe.modelpull.model.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.modelpull.model.NotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,7 +24,7 @@ interface ModelDownloader {
 
 class LocalModelDownloader @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val walaweClientAPI: WalaweClientAPI
+    private val walaweClientAPI: WalaweClientAPI,
 ) : ModelDownloader {
 
     private val modelDir by lazy {
@@ -33,7 +35,7 @@ class LocalModelDownloader @Inject constructor(
 
     @OptIn(ExperimentalUuidApi::class)
     override suspend fun getModel(uri: String): Result<CachePaligemmaModel> {
-        val defaultModelName = "model.tflite"
+        val defaultModelName = DEFAULT_LAST_MODEL_NAME
         val localFile = File(modelDir, defaultModelName)
 
         if (localFile.exists()) {
@@ -49,7 +51,7 @@ class LocalModelDownloader @Inject constructor(
 
         try {
             val response = withContext(Dispatchers.IO) {
-                walaweClientAPI.getModel(uri.ifEmpty { BuildConfig.URI_PALIGEMMA  })
+                walaweClientAPI.getModel(uri.ifEmpty { DEFAULT_MODEL_DOWNLOADER_URI  })
             }
 
             if (!response.isSuccessful || response.body() == null) {

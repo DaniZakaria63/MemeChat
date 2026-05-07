@@ -14,14 +14,9 @@ android {
     defaultConfig {
         minSdk = 24
         buildConfigField("String", "TAG", "\"WALAWE_MODEL_PULL\"")
-        buildConfigField("String", "URI_QWEN3",
-            project.properties["BASE_URL"].toString() +
-                    project.properties["URI_QWEN3_VL_EMBEDDING"].toString()
-        )
-        buildConfigField("String", "URI_PALIGEMMA",
-            project.properties["BASE_URL"].toString() +
-                    project.properties["URI_PALIGEMMA_MIX_224"].toString()
-        )
+        buildConfigField("String", "BASE_URL",project.properties["BASE_URL"].toString())
+        buildConfigField("String", "QWEN_MODEL_FILENAME", project.properties["FILENAME_QWEN3_VL_EMBEDDING"].toString())
+        buildConfigField("String", "PALIGEMMA_MODEL_FILENAME",project.properties["FILENAME_PALIGEMMA_MIX_224"].toString())
 
         testInstrumentationRunner = "fun.walawe.modelpull.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
