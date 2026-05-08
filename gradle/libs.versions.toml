@@ -52,7 +52,7 @@ androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3"}
-androidx-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts", version = "1.10.5"}
+androidx-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts", version = "1.11.1"}
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "viewmodelCompose"}
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }

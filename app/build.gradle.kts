@@ -36,7 +36,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
-        compose = false
+        compose = true
     }
 }
 
@@ -54,8 +54,23 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-
     implementation(libs.timber)
+
+    // Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.ui.tooling)
+    implementation(libs.androidx.google.fonts)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.google.accompanist.permission)
+    implementation(libs.coil.compose)
+    implementation(libs.lottie.compose)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.hilt.android.testing)
