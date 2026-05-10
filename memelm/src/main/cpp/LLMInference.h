@@ -18,6 +18,7 @@ class LLMInference {
     std::vector<char> _formattedMessages;        // Formatted prompt buffer
     std::vector<llama_token> _promptTokens;      // Tokenized prompt
     std::string _response;
+    std::string _pendingUtf8;
     bool _storeChats = true;
     bool _isGenerating = false;
     bool _ownsChatTemplate = false;
