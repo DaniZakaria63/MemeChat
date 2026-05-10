@@ -7,11 +7,13 @@ import androidx.work.BackoffPolicy
 import androidx.work.Configuration
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
+import dagger.hilt.android.HiltAndroidApp
 import `fun`.walawe.memechat.worker.ModelDownloadWorker
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
+@HiltAndroidApp
 class MemeChatApp : Application(), Configuration.Provider{
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
