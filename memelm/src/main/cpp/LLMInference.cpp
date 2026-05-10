@@ -10,6 +10,55 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <unistd.h>
+
+namespace {
+    constexpr int N_THREADS_MIN = 2;
+    constexpr int N_THREADS_MAX = 4;
+    constexpr int N_THREADS_HEADROOM = 2;
+
+    constexpr int DEFAULT_CONTEXT_SIZE = 8192;
+    constexpr int OVERFLOW_HEADROOM = 4;
+    constexpr int BATCH_SIZE = 512;
+
+    int resolve_thread_count(int requested) {
+        if (requested > 0) {
+            return requested;
+        }
+        long cores = sysconf(_SC_NPROCESSORS_ONLN);
+        if (cores <= 0) {
+            return N_THREADS_MIN;
+        }
+        int threads = static_cast<int>(cores) - N_THREADS_HEADROOM;
+        if (threads < N_THREADS_MIN) {
+            threads = N_THREADS_MIN;
+        }
+        return std::min(threads, N_THREADS_MAX);
+    }
+
+    bool is_valid_utf8(const std::string & s) {
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(s.c_str());
+        size_t len = s.size();
+        size_t i = 0;
+        while (i < len) {
+            if (bytes[i] <= 0x7F) {
+                i += 1;
+            } else if ((bytes[i] & 0xE0) == 0xC0) {
+                if (i + 1 >= len || (bytes[i + 1] & 0xC0) != 0x80) return false;
+                i += 2;
+            } else if ((bytes[i] & 0xF0) == 0xE0) {
+                if (i + 2 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80) return false;
+                i += 3;
+            } else if ((bytes[i] & 0xF8) == 0xF0) {
+                if (i + 3 >= len || (bytes[i + 1] & 0xC0) != 0x80 || (bytes[i + 2] & 0xC0) != 0x80 || (bytes[i + 3] & 0xC0) != 0x80) return false;
+                i += 4;
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+}
 
 void LLMInference::loadModel(const char *model_path, float minP, float temperature,
                              bool storeChats, long contextSize, const char *chatTemplate, int nThreads,
@@ -25,12 +74,19 @@ void LLMInference::loadModel(const char *model_path, float minP, float temperatu
     _model = llama_model_load_from_file(model_path, model_params);
     if (!_model) throw std::runtime_error("Failed to load model");
 
-    // 3. Create context (this is where you'd allocate vision space for VLMs)
+    const int requested_ctx = contextSize > 0 ? static_cast<int>(contextSize) : 0;
+    const int trained_ctx = llama_model_n_ctx_train(_model);
+    const int ctx_size = requested_ctx > 0 ? requested_ctx : (trained_ctx > 0 ? trained_ctx : DEFAULT_CONTEXT_SIZE);
+
+    const int threads = resolve_thread_count(nThreads);
+
+    // 3. Create context
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = contextSize;
-    ctx_params.n_batch = contextSize;
-    ctx_params.n_threads = nThreads;
-    ctx_params.n_threads_batch = nThreads;
+    ctx_params.n_ctx = static_cast<uint32_t>(ctx_size);
+    ctx_params.n_batch = std::min<uint32_t>(BATCH_SIZE, ctx_params.n_ctx);
+    ctx_params.n_ubatch = ctx_params.n_batch;
+    ctx_params.n_threads = threads;
+    ctx_params.n_threads_batch = threads;
     _ctx = llama_init_from_model(_model, ctx_params);
     if (!_ctx) throw std::runtime_error("Failed to create context");
 
@@ -42,13 +98,18 @@ void LLMInference::loadModel(const char *model_path, float minP, float temperatu
     llama_sampler_chain_add(_sampler, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(_sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    this->_storeChats = storeChats;
+    _storeChats = storeChats;
+    _response.clear();
+    _pendingUtf8.clear();
+    _isGenerating = false;
+    _nPast = 0;
+
     if (chatTemplate != nullptr && std::strlen(chatTemplate) > 0) {
-        this->_chatTemplate = strdup(chatTemplate);
-        this->_ownsChatTemplate = true;
+        _chatTemplate = strdup(chatTemplate);
+        _ownsChatTemplate = true;
     } else {
-        this->_chatTemplate = llama_model_chat_template(_model, nullptr);
-        this->_ownsChatTemplate = false;
+        _chatTemplate = llama_model_chat_template(_model, nullptr);
+        _ownsChatTemplate = false;
     }
 }
 
@@ -92,10 +153,15 @@ void LLMInference::startCompletion(const char *query) {
     if (!_ctx || !_model) {
         throw std::runtime_error("Model not loaded");
     }
+    if (!_sampler) {
+        throw std::runtime_error("Sampler not initialized");
+    }
 
     _response.clear();
+    _pendingUtf8.clear();
     _promptTokens.clear();
     _formattedMessages.clear();
+    llama_sampler_reset(_sampler);
 
     if (!_storeChats) {
         for (auto & msg : _messages) {
@@ -138,6 +204,13 @@ void LLMInference::startCompletion(const char *query) {
         throw std::runtime_error("Tokenization failed");
     }
     _promptTokens.resize(n_tokens);
+
+    const int32_t max_tokens = static_cast<int32_t>(llama_n_ctx(_ctx)) - OVERFLOW_HEADROOM;
+    if (n_tokens > max_tokens) {
+        const int32_t skip = n_tokens - max_tokens;
+        _promptTokens.erase(_promptTokens.begin(), _promptTokens.begin() + skip);
+        n_tokens = max_tokens;
+    }
 
     llama_memory_clear(llama_get_memory(_ctx), true);
     _nPast = 0;
@@ -182,10 +255,15 @@ void LLMInference::startCompletionWithImage(const char* query, const unsigned ch
     if (!_mtmd) {
         throw std::runtime_error("Vision model not loaded");
     }
+    if (!_sampler) {
+        throw std::runtime_error("Sampler not initialized");
+    }
 
     _response.clear();
+    _pendingUtf8.clear();
     _promptTokens.clear();
     _formattedMessages.clear();
+    llama_sampler_reset(_sampler);
 
     if (!_storeChats) {
         for (auto & msg : _messages) {
@@ -260,7 +338,13 @@ std::string LLMInference::completionLoop() {
         return "[EOG]";
     }
 
+    if (_nPast >= static_cast<llama_pos>(llama_n_ctx(_ctx)) - OVERFLOW_HEADROOM) {
+        _isGenerating = false;
+        return "[EOG]";
+    }
+
     const llama_token new_token_id = llama_sampler_sample(_sampler, _ctx, -1);
+    llama_sampler_accept(_sampler, new_token_id);
     if (llama_vocab_is_eog(_vocab, new_token_id)) {
         _isGenerating = false;
         if (_storeChats) {
@@ -269,15 +353,29 @@ std::string LLMInference::completionLoop() {
         return "[EOG]";
     }
 
-    char buf[256];
-    const int n = llama_token_to_piece(_vocab, new_token_id, buf, sizeof(buf), 0, true);
+    char stack_buf[256];
+    int32_t n = llama_token_to_piece(_vocab, new_token_id, stack_buf, sizeof(stack_buf), 0, true);
+    std::string piece;
     if (n < 0) {
-        _isGenerating = false;
-        return "[EOG]";
+        std::vector<char> heap_buf(static_cast<size_t>(-n));
+        n = llama_token_to_piece(_vocab, new_token_id, heap_buf.data(), static_cast<int32_t>(heap_buf.size()), 0, true);
+        if (n < 0) {
+            _isGenerating = false;
+            return "[EOG]";
+        }
+        piece.assign(heap_buf.data(), static_cast<size_t>(n));
+    } else {
+        piece.assign(stack_buf, static_cast<size_t>(n));
     }
 
-    std::string piece(buf, n);
-    _response += piece;
+    _pendingUtf8 += piece;
+    if (!is_valid_utf8(_pendingUtf8)) {
+        return "";
+    }
+
+    std::string ready = _pendingUtf8;
+    _pendingUtf8.clear();
+    _response += ready;
 
     std::vector<llama_token> next_token = { new_token_id };
     if (!decodeTokens(next_token, true)) {
@@ -285,7 +383,7 @@ std::string LLMInference::completionLoop() {
         return "[EOG]";
     }
 
-    return piece;
+    return ready;
 }
 
 void LLMInference::stopCompletion() {

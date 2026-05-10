@@ -49,7 +49,9 @@ class MemeLM {
         startCompletion(nativePtr, query)
         var piece = completionLoop(nativePtr)
         while (piece != "[EOG]") {
-            emit(piece)
+            if (piece.isNotEmpty()) {
+                emit(piece)
+            }
             piece = completionLoop(nativePtr)
         }
     }
@@ -62,7 +64,9 @@ class MemeLM {
         startCompletionWithImage(nativePtr, prompt, imageBytes)
         var piece = completionLoop(nativePtr)
         while (piece != "[EOG]") {
-            emit(piece)
+            if (piece.isNotEmpty()) {
+                emit(piece)
+            }
             piece = completionLoop(nativePtr)
         }
     }

@@ -45,26 +45,15 @@ target_compile_options(llama PUBLIC -fvisibility=hidden -fvisibility-inlines-hid
 target_compile_options(llama PUBLIC -ffunction-sections -fdata-sections)
 target_link_options(llama PRIVATE -Wl,--gc-sections -flto -Wl,--exclude-libs,ALL)
 
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-        GGML_SYSTEM_ARCH=${GGML_SYSTEM_ARCH}
-        GGML_CPU_KLEIDIAI=$<BOOL:${GGML_CPU_KLEIDIAI}>
-        GGML_OPENMP=$<BOOL:${GGML_OPENMP}>
-)
+# Link Vulkan backend only when available.
+function(link_vulkan_if_available target_name)
+    if(TARGET ggml-vulkan)
+        target_link_libraries(${target_name} ggml-vulkan vulkan)
+    else()
+        message(WARNING "ggml-vulkan target not found; building without Vulkan backend")
+    endif()
+endfunction()
 
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-        ${LLAMA_DIR}
-        ${LLAMA_DIR}/include
-        ${LLAMA_DIR}/ggml/include
-)
-
-target_link_libraries(${CMAKE_PROJECT_NAME}
-        llama
-        llama-common
-        ggml-vulkan
-        android
-        log
-        vulkan
-)
 # Build the shared library
 function(build_library target_name)
     add_library(${target_name} SHARED LLMInference.cpp memelm.cpp)
@@ -77,8 +66,9 @@ function(build_library target_name)
             ${VENDOR_DIR}
     )
 
-    target_compile_features(${target_name} PUBLIC -ffunction-sections -fdata-sections)
-    target_link_libraries(${target_name} android log llama mtmd vulkan)
+    target_compile_options(${target_name} PUBLIC -ffunction-sections -fdata-sections)
+    target_link_libraries(${target_name} android log llama mtmd)
+    link_vulkan_if_available(${target_name})
     target_link_options(
             ${target_name}
             PRIVATE
@@ -96,6 +86,27 @@ function(build_library_universal target_name)
 endfunction()
 
 build_library_universal("memelm")
+
+# Apply project-wide settings to the memelm target after it exists.
+target_compile_definitions(memelm PRIVATE
+        GGML_SYSTEM_ARCH=${GGML_SYSTEM_ARCH}
+        GGML_CPU_KLEIDIAI=$<BOOL:${GGML_CPU_KLEIDIAI}>
+        GGML_OPENMP=$<BOOL:${GGML_OPENMP}>
+)
+
+target_include_directories(memelm PRIVATE
+        ${LLAMA_DIR}
+        ${LLAMA_DIR}/include
+        ${LLAMA_DIR}/ggml/include
+)
+
+target_link_libraries(memelm
+        llama
+        llama-common
+        android
+        log
+)
+link_vulkan_if_available(memelm)
 
 # library target for GGUFReader
 set(TARGET_NAME_GGUF_READER ggufreader)

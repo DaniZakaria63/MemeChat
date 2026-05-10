@@ -15,30 +15,16 @@ namespace {
     }
 }
 
-/**
- * LLama resources: context, model, batch and sampler
- */
-constexpr int   N_THREADS_MIN           = 2;
-constexpr int   N_THREADS_MAX           = 4;
-constexpr int   N_THREADS_HEADROOM      = 2;
-
-constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;
-constexpr int   OVERFLOW_HEADROOM       = 4;
-constexpr int   BATCH_SIZE              = 512;
-constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;
-
-static llama_model                      * g_model;
-static llama_context                    * g_context;
-static llama_batch                        g_batch;
-static common_chat_templates_ptr          g_chat_templates;
-static common_sampler                   * g_sampler;
-
-
 extern "C" JNIEXPORT jlong JNICALL
 Java_fun_walawe_memelm_MemeLM_loadModel(
         JNIEnv* env, jobject /* thiz */, jstring modelPath, jfloat minP,
         jfloat temperature, jboolean storeChats, jlong contextSize,
         jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock) {
+
+    if (modelPath == nullptr) {
+        throwJavaRuntime(env, "Model path is required");
+        return 0;
+    }
 
     const char* modelPathCstr = env->GetStringUTFChars(modelPath, nullptr);
     const char* chatTemplateCstr = nullptr;
@@ -74,6 +60,10 @@ Java_fun_walawe_memelm_MemeLM_addChatMessage(
         throwJavaRuntime(env, "Model not loaded");
         return;
     }
+    if (message == nullptr || role == nullptr) {
+        throwJavaRuntime(env, "Message and role are required");
+        return;
+    }
 
     const char* messageCstr = env->GetStringUTFChars(message, nullptr);
     const char* roleCstr = env->GetStringUTFChars(role, nullptr);
@@ -88,6 +78,10 @@ Java_fun_walawe_memelm_MemeLM_startCompletion(
     auto * llm = getPtr(modelPtr);
     if (!llm) {
         throwJavaRuntime(env, "Model not loaded");
+        return;
+    }
+    if (prompt == nullptr) {
+        throwJavaRuntime(env, "Prompt is required");
         return;
     }
 
@@ -134,6 +128,10 @@ Java_fun_walawe_memelm_MemeLM_initVision(
         throwJavaRuntime(env, "Model not loaded");
         return;
     }
+    if (mmprojPath == nullptr) {
+        throwJavaRuntime(env, "mmproj path is required");
+        return;
+    }
 
     const char* mmprojCstr = env->GetStringUTFChars(mmprojPath, nullptr);
     const char* markerCstr = nullptr;
@@ -164,6 +162,10 @@ Java_fun_walawe_memelm_MemeLM_startCompletionWithImage(
     auto * llm = getPtr(modelPtr);
     if (!llm) {
         throwJavaRuntime(env, "Model not loaded");
+        return;
+    }
+    if (prompt == nullptr || imageBytes == nullptr) {
+        throwJavaRuntime(env, "Prompt and image bytes are required");
         return;
     }
 
