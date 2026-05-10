@@ -47,3 +47,20 @@ Java_fun_walawe_memelm_gguf_GGUFReader_getChatTemplate(JNIEnv* env, jobject /*th
     }
     return env->NewStringUTF(chatTemplate.c_str());
 }
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_fun_walawe_memelm_gguf_GGUFReader_getModelBasename(JNIEnv* env, jobject /*thiz*/, jlong nativeHandle) {
+    auto* ggufContext = reinterpret_cast<gguf_context*>(nativeHandle);
+    if (!ggufContext) {
+        return env->NewStringUTF("");
+    }
+    int64_t baseKeyId = gguf_find_key(ggufContext, "general.basename");
+    if (baseKeyId == -1) {
+        baseKeyId = gguf_find_key(ggufContext, "general.name");
+    }
+    if (baseKeyId == -1) {
+        return env->NewStringUTF("");
+    }
+    std::string basename = gguf_get_val_str(ggufContext, baseKeyId);
+    return env->NewStringUTF(basename.c_str());
+}

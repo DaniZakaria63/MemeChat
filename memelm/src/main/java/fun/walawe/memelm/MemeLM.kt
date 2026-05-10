@@ -1,5 +1,7 @@
 package `fun`.walawe.memelm
 
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -56,8 +58,12 @@ class MemeLM {
         }
     }
 
-    /**
-     * Text+image to text streaming response.
+    /** Add a message to the chat history (e.g., system prompt). */
+    fun addChatMessage(message: String, role: String) {
+        addChatMessage(nativePtr, message, role)
+    }
+
+    /** Text+image to text streaming response.
      * Requires load() and initVision() to be called first.
      */
     fun getResponseAsFlowWithImage(prompt: String, imageBytes: ByteArray): Flow<String> = flow {
@@ -71,9 +77,19 @@ class MemeLM {
         }
     }
 
+    /** Text+bitmap to text streaming response. */
+    fun getResponseAsFlowWithImage(prompt: String, bitmap: Bitmap): Flow<String> {
+        val imageBytes = bitmapToPngBytes(bitmap)
+        return getResponseAsFlowWithImage(prompt, imageBytes)
+    }
+
     /** Image-to-text streaming response using a default or custom prompt. */
     fun getResponseAsFlowForImage(imageBytes: ByteArray, prompt: String = DEFAULT_IMAGE_PROMPT): Flow<String> =
         getResponseAsFlowWithImage(prompt, imageBytes)
+
+    /** Image-to-text streaming response using a default or custom prompt. */
+    fun getResponseAsFlowForImage(bitmap: Bitmap, prompt: String = DEFAULT_IMAGE_PROMPT): Flow<String> =
+        getResponseAsFlowWithImage(prompt, bitmap)
 
     /** Release native resources. Always call when finished. */
     fun close() {
@@ -81,6 +97,12 @@ class MemeLM {
             close(nativePtr)
             nativePtr = 0
         }
+    }
+
+    private fun bitmapToPngBytes(bitmap: Bitmap): ByteArray {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        return stream.toByteArray()
     }
 
     // Native methods

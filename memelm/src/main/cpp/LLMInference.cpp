@@ -13,6 +13,8 @@
 #include <unistd.h>
 
 namespace {
+    constexpr const char* LOG_TAG = "memelm";
+
     constexpr int N_THREADS_MIN = 2;
     constexpr int N_THREADS_MAX = 4;
     constexpr int N_THREADS_HEADROOM = 2;
@@ -63,6 +65,8 @@ namespace {
 void LLMInference::loadModel(const char *model_path, float minP, float temperature,
                              bool storeChats, long contextSize, const char *chatTemplate, int nThreads,
                              bool useMmap, bool useMlock) {
+
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "loadModel: %s", model_path ? model_path : "<null>");
 
     // 1. Initialize backends
     ggml_backend_load_all();
@@ -150,6 +154,8 @@ bool LLMInference::decodeTokens(const std::vector<llama_token>& tokens, bool log
 }
 
 void LLMInference::startCompletion(const char *query) {
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "startCompletion");
+
     if (!_ctx || !_model) {
         throw std::runtime_error("Model not loaded");
     }
@@ -222,6 +228,8 @@ void LLMInference::startCompletion(const char *query) {
 }
 
 void LLMInference::initVision(const char* mmprojPath, const char* mediaMarker, int nThreads, bool useGpu, bool warmup) {
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "initVision: %s", mmprojPath ? mmprojPath : "<null>");
+
     if (!_model) {
         throw std::runtime_error("Text model not loaded");
     }
@@ -249,6 +257,8 @@ void LLMInference::initVision(const char* mmprojPath, const char* mediaMarker, i
 }
 
 void LLMInference::startCompletionWithImage(const char* query, const unsigned char* imageData, size_t imageSize) {
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "startCompletionWithImage: %zu bytes", imageSize);
+
     if (!_ctx || !_model) {
         throw std::runtime_error("Model not loaded");
     }

@@ -8,6 +8,7 @@ class GGUFReader {
         init {
             System.loadLibrary("ggufreader")
         }
+        private const val DEFAULT_EXPECTED_MODEL = "Qwen.Qwen3-VL-Embedding-2B.Q2_K"
     }
 
     private var nativeHandle: Long = 0L
@@ -31,6 +32,17 @@ class GGUFReader {
         return chatTemplate.ifEmpty { null }
     }
 
+    fun getModelBasename(): String? {
+        assert(nativeHandle != 0L) { "Use GGUFReader.load() to initialize the reader" }
+        val basename = getModelBasename(nativeHandle)
+        return basename.ifEmpty { null }
+    }
+
+    fun isExpectedQwenModel(expectedBasename: String = DEFAULT_EXPECTED_MODEL): Boolean {
+        val basename = getModelBasename() ?: return false
+        return basename == expectedBasename || basename == "$expectedBasename.gguf"
+    }
+
     /** Returns the native handle (pointer to gguf_context created on the native side) */
     private external fun getGGUFContextNativeHandle(modelPath: String): Long
 
@@ -39,4 +51,7 @@ class GGUFReader {
 
     /** Read the chat template from the GGUF file, given the native handle */
     private external fun getChatTemplate(nativeHandle: Long): String
+
+    /** Read the model basename from the GGUF file, given the native handle */
+    private external fun getModelBasename(nativeHandle: Long): String
 }
