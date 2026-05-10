@@ -42,6 +42,8 @@ android {
 
 dependencies {
     implementation(project(":modelpull"))
+    implementation(project(":memelm"))
+
     implementation(libs.androidx.coroutine)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)

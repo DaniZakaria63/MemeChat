@@ -1,5 +1,4 @@
 package `fun`.walawe.memelm
 
-
-class ExampleUnitTest {
+class InferenceEngine {
 }

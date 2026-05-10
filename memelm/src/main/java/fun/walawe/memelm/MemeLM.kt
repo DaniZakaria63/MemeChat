@@ -9,6 +9,7 @@ class MemeLM {
     private var nativePtr: Long = 0
 
     companion object {
+        const val DEFAULT_IMAGE_PROMPT = "describe this meme"
         init {
             System.loadLibrary("memelm")
         }
@@ -25,6 +26,7 @@ class MemeLM {
         val useMlock: Boolean = false,
     )
 
+    /** Load the GGUF text model for text-only or vision workflows. */
     suspend fun load(modelPath: String, params: InferenceParams = InferenceParams()) {
         withContext(Dispatchers.IO) {
             nativePtr = loadModel(
@@ -35,12 +37,14 @@ class MemeLM {
         }
     }
 
+    /** Initialize the vision adapter (mmproj) for Paligemma-style VLM usage. */
     suspend fun initVision(mmprojPath: String, mediaMarker: String = "", useGpu: Boolean = true, warmup: Boolean = true) {
         withContext(Dispatchers.IO) {
             initVision(nativePtr, mmprojPath, mediaMarker, InferenceParams().numThreads, useGpu, warmup)
         }
     }
 
+    /** Text-to-text streaming response. */
     fun getResponseAsFlow(query: String): Flow<String> = flow {
         startCompletion(nativePtr, query)
         var piece = completionLoop(nativePtr)
@@ -50,6 +54,10 @@ class MemeLM {
         }
     }
 
+    /**
+     * Text+image to text streaming response.
+     * Requires load() and initVision() to be called first.
+     */
     fun getResponseAsFlowWithImage(prompt: String, imageBytes: ByteArray): Flow<String> = flow {
         startCompletionWithImage(nativePtr, prompt, imageBytes)
         var piece = completionLoop(nativePtr)
@@ -59,6 +67,11 @@ class MemeLM {
         }
     }
 
+    /** Image-to-text streaming response using a default or custom prompt. */
+    fun getResponseAsFlowForImage(imageBytes: ByteArray, prompt: String = DEFAULT_IMAGE_PROMPT): Flow<String> =
+        getResponseAsFlowWithImage(prompt, imageBytes)
+
+    /** Release native resources. Always call when finished. */
     fun close() {
         if (nativePtr != 0L) {
             close(nativePtr)

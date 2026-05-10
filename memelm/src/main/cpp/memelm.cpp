@@ -3,17 +3,36 @@
 #include <stdexcept>
 
 namespace {
-void throwJavaRuntime(JNIEnv * env, const char * message) {
-    jclass exClass = env->FindClass("java/lang/RuntimeException");
-    if (exClass) {
-        env->ThrowNew(exClass, message);
+    void throwJavaRuntime(JNIEnv * env, const char * message) {
+        jclass exClass = env->FindClass("java/lang/RuntimeException");
+        if (exClass) {
+            env->ThrowNew(exClass, message);
+        }
+    }
+
+    LLMInference * getPtr(jlong handle) {
+        return reinterpret_cast<LLMInference *>(handle);
     }
 }
 
-LLMInference * getPtr(jlong handle) {
-    return reinterpret_cast<LLMInference *>(handle);
-}
-}
+/**
+ * LLama resources: context, model, batch and sampler
+ */
+constexpr int   N_THREADS_MIN           = 2;
+constexpr int   N_THREADS_MAX           = 4;
+constexpr int   N_THREADS_HEADROOM      = 2;
+
+constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;
+constexpr int   OVERFLOW_HEADROOM       = 4;
+constexpr int   BATCH_SIZE              = 512;
+constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;
+
+static llama_model                      * g_model;
+static llama_context                    * g_context;
+static llama_batch                        g_batch;
+static common_chat_templates_ptr          g_chat_templates;
+static common_sampler                   * g_sampler;
+
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_fun_walawe_memelm_MemeLM_loadModel(
