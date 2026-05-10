@@ -10,7 +10,7 @@ import dagger.assisted.AssistedInject
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.modelpull.model.IllegalURILinkIdException
-import `fun`.walawe.modelpull.model.ModelCacheModule
+import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
 import `fun`.walawe.modelpull.service.ModelDownloader
 import timber.log.Timber
@@ -21,10 +21,10 @@ class ModelDownloadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val modelDownloader: ModelDownloader,
-    private val modelCacheModule: ModelCacheModule,
+    private val modelCache: ModelCache,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
-        if (modelCacheModule.getModel() != null) {
+        if (modelCache.getModel() != null) {
             Timber.d("Model already cached, skipping download")
             return Result.success(workDataOf("warning" to "Model already exists"))
         }
@@ -62,7 +62,7 @@ class ModelDownloadWorker @AssistedInject constructor(
 
         Timber.d("Model downloaded successfully: ${cacheModel.displayName}")
 
-        modelCacheModule.setModel(cacheModel) // Static memory cache
+        modelCache.setModel(cacheModel) // Static memory cache
         Timber.d("Model metadata saved to settings")
 
         return Result.success(workDataOf("info" to "Model downloaded successfully"))

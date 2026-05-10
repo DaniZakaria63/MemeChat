@@ -1,5 +1,6 @@
 package `fun`.walawe.modelpull.model
 
+import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
@@ -8,7 +9,7 @@ import javax.inject.Singleton
  * without re-downloading from storage repeatedly.
  */
 @Singleton
-class ModelCacheModule {
+class ModelCache @Inject constructor() {
     @Volatile
     var cachedModel: CachePaligemmaModel? = null
 
