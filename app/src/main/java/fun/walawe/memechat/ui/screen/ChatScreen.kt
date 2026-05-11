@@ -126,12 +126,13 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
 ) {
+    val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+
     var inputText by remember { mutableStateOf("") }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
 
     val conversations = remember {
         listOf(
@@ -172,7 +173,7 @@ fun ChatScreen(
         },
         onRemoveImage = { viewModel.setSelectedImageUri(null) },
         onSend = {
-            if (inputText.isNotBlank() && !uiState.isProcessing) {
+            if (inputText.isNotBlank() && uiState.isProcessing) {
                 val selectedImage = uiState.selectedImageUri
                 if (selectedImage == null) {
                     viewModel.sendMessage(inputText)
@@ -182,7 +183,7 @@ fun ChatScreen(
                 inputText = ""
             }
         },
-        onDismissError = viewModel::consumeError,
+        onDismissError = viewModel::clearError,
     )
 }
 
@@ -255,7 +256,6 @@ private fun ChatScreenContent(
             bottomBar = {
                 InputBar(
                     inputText = inputText,
-                    isProcessing = uiState.isProcessing,
                     selectedImageUri = uiState.selectedImageUri,
                     onInputChange = onInputChange,
                     onAttach = onAttach,
@@ -280,14 +280,15 @@ private fun ChatScreenContent(
                     )
                 }
 
+/*
                 if (uiState.isProcessing) {
                     LoadingOverlay()
                 }
+*/
 
-                if (uiState.errorMessage != null) {
+                if (!uiState.error.isNullOrEmpty()) {
                     TransientErrorDialog(
-                        message = uiState.errorMessage,
-                        errorId = uiState.errorId,
+                        message = uiState.error,
                         onDismiss = onDismissError,
                     )
                 }
@@ -465,7 +466,6 @@ private fun MessageBubble(message: ChatMessage) {
 @Composable
 private fun InputBar(
     inputText: String,
-    isProcessing: Boolean,
     selectedImageUri: String?,
     onInputChange: (String) -> Unit,
     onAttach: () -> Unit,
@@ -567,7 +567,7 @@ private fun InputBar(
                 }
 
                 FloatingActionButton(
-                    onClick = { if(!isProcessing) onSend() },
+                    onClick = onSend,
                     containerColor = if (inputText.isNotEmpty()) {
                         MaterialTheme.colorScheme.primaryFixed
                     } else MaterialTheme.colorScheme.primaryFixed.copy(
@@ -756,13 +756,8 @@ private fun LoadingOverlay() {
 @Composable
 private fun TransientErrorDialog(
     message: String,
-    errorId: Long,
     onDismiss: () -> Unit,
 ) {
-    LaunchedEffect(errorId) {
-        delay(1000)
-        onDismiss()
-    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -781,6 +776,14 @@ private fun TransientErrorDialog(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
+        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Dismiss error",
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -790,7 +793,7 @@ private fun ChatScreenPreviewLight() {
     MaterialTheme {
         Surface {
             ChatScreenContent(
-                uiState = ChatUiState(isProcessing = true),
+                uiState = ChatUiState(),
                 messages = listOf(
                     ChatMessage(
                         id = "m1",
