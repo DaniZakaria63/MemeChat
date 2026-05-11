@@ -10,7 +10,11 @@ import java.util.concurrent.atomic.AtomicReference
 class FakeModelDownloader(
     private val context: Context
 ) : ModelDownloader {
-    override suspend fun getModel(uri: String): Result<CachePaligemmaModel> {
+    override suspend fun getModel(
+        uri: String,
+        onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
+    ): Result<CachePaligemmaModel> {
+        onProgress(1L, 1L)
         return when (mode.get()) {
             Mode.SUCCESS -> Result.success(createModel("model.tflite"))
             Mode.VALIDATION -> Result.success(createModel(""))
