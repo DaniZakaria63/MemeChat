@@ -35,7 +35,7 @@ class LocalModelDownloaderTest {
     @Test
     fun testGetModelSuccess() = runBlocking {
         val uri = "http://192.168.0.103:45639/dummy.txt"
-        val result = modelDownloader.getModel(uri)
+        val result = modelDownloader.getModel(uri) { _, _ -> }
         assertTrue("Expected success", result.isSuccess)
         val model = result.getOrNull()
         assertNotNull("Model should not be null", model)
@@ -45,7 +45,7 @@ class LocalModelDownloaderTest {
     @Test
     fun testGetModelError() = runBlocking {
         val uri = "http://invalid.url/model"
-        val result = modelDownloader.getModel(uri)
+        val result = modelDownloader.getModel(uri) { _, _ -> }
         assertTrue("Expected failure", result.isFailure)
         val exception = result.exceptionOrNull()
         assertNotNull("Exception should not be null", exception)
@@ -59,7 +59,7 @@ class LocalModelDownloaderTest {
         localFile.createNewFile()
 
         val uri = "http://example.com/model"
-        val result = modelDownloader.getModel(uri)
+        val result = modelDownloader.getModel(uri) { _, _ -> }
         assertTrue("Expected success (model exists)", result.isSuccess)
         val model = result.getOrNull()
         assertNotNull("Model should not be null", model)
