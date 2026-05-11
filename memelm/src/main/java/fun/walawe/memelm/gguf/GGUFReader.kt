@@ -8,7 +8,6 @@ class GGUFReader {
         init {
             System.loadLibrary("ggufreader")
         }
-        private const val DEFAULT_EXPECTED_MODEL = "Qwen.Qwen3-VL-Embedding-2B.Q2_K"
     }
 
     private var nativeHandle: Long = 0L
@@ -38,7 +37,7 @@ class GGUFReader {
         return basename.ifEmpty { null }
     }
 
-    fun isExpectedQwenModel(expectedBasename: String = DEFAULT_EXPECTED_MODEL): Boolean {
+    fun isExpectedQwenModel(expectedBasename: String): Boolean {
         val basename = getModelBasename() ?: return false
         return basename == expectedBasename || basename == "$expectedBasename.gguf"
     }
