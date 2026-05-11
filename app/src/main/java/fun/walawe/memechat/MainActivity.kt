@@ -11,7 +11,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
+import `fun`.walawe.memechat.ui.screen.ChatScreen
 import `fun`.walawe.memechat.ui.screen.DownloadScreen
+import `fun`.walawe.memechat.ui.screen.SettingsScreen
 import `fun`.walawe.memechat.ui.theme.MemeChatAppTheme
 
 @AndroidEntryPoint
@@ -30,8 +32,16 @@ class MainActivity : ComponentActivity() {
                 ){
                     composable("Downloader") {
                         DownloadScreen {
-
+                            navHostController.navigate("Chat") {
+                                popUpTo("Downloader") { inclusive = true }
+                            }
                         }
+                    }
+                    composable("Chat") {
+                        ChatScreen(onOpenSettings = { navHostController.navigate("Settings") })
+                    }
+                    composable("Settings") {
+                        SettingsScreen(onBack = { navHostController.popBackStack() })
                     }
                 }
             }
