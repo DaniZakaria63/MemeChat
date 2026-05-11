@@ -4,8 +4,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import dalvik.annotation.optimization.FastNative
+import `fun`.walawe.memelm.BuildConfig
 import `fun`.walawe.memelm.gguf.GGUFReader
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,12 +22,12 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+
 class InferenceEngineImpl private constructor(
     private val nativeLibDir: String
 ) : InferenceEngine {
     companion object {
         private val TAG = InferenceEngineImpl::class.java.simpleName
-        private const val EXPECTED_MODEL_BASENAME = "Qwen.Qwen3-VL-Embedding-2B.Q2_K"
         private const val DEFAULT_PREDICT_LENGTH = 1024
         private const val DEFAULT_NUM_THREADS = 4
 
@@ -43,7 +45,7 @@ class InferenceEngineImpl private constructor(
             instance ?: synchronized(this) {
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 require(nativeLibDir.isNotBlank()) { "Expected a valid native library path!" }
-
+                System.loadLibrary("memelm")
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
                     InferenceEngineImpl(nativeLibDir).also { instance = it }
@@ -137,23 +139,31 @@ class InferenceEngineImpl private constructor(
             Log.i(TAG, "Loading model: $pathToModel")
 
             try {
-                ggufReader.load(pathToModel)
-                val isExpected = ggufReader.isExpectedQwenModel(EXPECTED_MODEL_BASENAME)
-                if (!isExpected) {
-                    throw IllegalArgumentException("Unexpected GGUF model. Expected $EXPECTED_MODEL_BASENAME")
+                val file = File(pathToModel)
+                if (!file.exists() || !file.isFile || file.length() <= 0L) {
+                    throw IllegalStateException("Model file missing or empty: $pathToModel")
                 }
 
-                val contextSize = ggufReader.getContextSize()
-                val chatTemplate = ggufReader.getChatTemplate()
+                ggufReader.load(pathToModel)
+                val isExpected = ggufReader.isExpectedQwenModel(BuildConfig.BASENAME_QWEN3_VL_MODEL)
+                if (!isExpected) {
+                    throw IllegalArgumentException("Unexpected GGUF model. Expected ${BuildConfig.BASENAME_QWEN3_VL_MODEL}")
+                }
 
-                nativePtr = loadModel(
+                val ggufContext = ggufReader.getContextSize()
+                val contextSize = when {
+                    ggufContext == null -> params.contextSize
+                    ggufContext <= params.contextSize -> ggufContext
+                    else -> params.contextSize
+                }
+                val chatTemplate = ggufReader.getChatTemplate() ?: params.chatTemplate.orEmpty()
+                Log.i(TAG, "Using context size: $contextSize (gguf=$ggufContext)")
+
+                nativePtr = loadModelNativeWithFallback(
                     modelPath = pathToModel,
-                    minP = params.minP,
-                    temperature = params.temperature,
-                    storeChats = params.storeChats,
-                    contextSize = contextSize ?: params.contextSize,
-                    chatTemplate = chatTemplate ?: params.chatTemplate.orEmpty(),
-                    params.numThreads, params.useMmap, params.useMlock
+                    params = params,
+                    contextSize = contextSize,
+                    chatTemplate = chatTemplate
                 )
 
                 readyForSystemPrompt = true
@@ -290,6 +300,44 @@ class InferenceEngineImpl private constructor(
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
         return stream.toByteArray()
+    }
+
+    private fun loadModelNativeWithFallback(
+        modelPath: String,
+        params: InferenceParams,
+        contextSize: Long,
+        chatTemplate: String,
+    ): Long {
+        return try {
+            loadModel(
+                modelPath = modelPath,
+                minP = params.minP,
+                temperature = params.temperature,
+                storeChats = params.storeChats,
+                contextSize = contextSize,
+                chatTemplate = chatTemplate,
+                numThreads = params.numThreads,
+                useMmap = params.useMmap,
+                useMlock = params.useMlock
+            )
+        } catch (e: Exception) {
+            val canRetry = params.useMmap && (e.message?.contains("Failed to load model") == true)
+            if (!canRetry) {
+                throw e
+            }
+            Log.w(TAG, "Model load failed with mmap; retrying without mmap", e)
+            loadModel(
+                modelPath = modelPath,
+                minP = params.minP,
+                temperature = params.temperature,
+                storeChats = params.storeChats,
+                contextSize = contextSize,
+                chatTemplate = chatTemplate,
+                numThreads = params.numThreads,
+                useMmap = false,
+                useMlock = params.useMlock
+            )
+        }
     }
 
 }
