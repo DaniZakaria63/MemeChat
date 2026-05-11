@@ -1,7 +1,6 @@
 package `fun`.walawe.memechat.worker
 
 import android.content.Context
-import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
@@ -12,7 +11,7 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import dagger.hilt.android.testing.UninstallModules
 import `fun`.walawe.modelpull.NetworkModule
 import `fun`.walawe.modelpull.model.CachePaligemmaModel
-import `fun`.walawe.modelpull.model.ModelCacheModule
+import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -22,7 +21,6 @@ import java.io.File
 import javax.inject.Inject
 
 @HiltAndroidTest
-@UninstallModules(NetworkModule::class)
 class ModelDownloadWorkerTest {
     @get:Rule
     val hiltRule = HiltAndroidRule(this)
@@ -31,13 +29,13 @@ class ModelDownloadWorkerTest {
     @ApplicationContext
     lateinit var context: Context
 
-    lateinit var modelCacheModule: ModelCacheModule
+    lateinit var modelCache: ModelCache
 
     @Before
     fun setUp() {
         hiltRule.inject()
-        modelCacheModule = ModelCacheModule()
-        modelCacheModule.clearModel()
+        modelCache = ModelCache()
+        modelCache.clearModel()
         FakeModelDownloader.setMode(FakeModelDownloader.Mode.SUCCESS)
         deleteModelFile()
     }
@@ -51,7 +49,7 @@ class ModelDownloadWorkerTest {
         assertTrue(result is ListenableWorker.Result.Success)
         val output = (result as ListenableWorker.Result.Success).outputData
         assertEquals("Model downloaded successfully", output.getString("info"))
-        assertNotNull(modelCacheModule.getModel())
+        assertNotNull(modelCache.getModel())
     }
 
     @Test
@@ -67,7 +65,7 @@ class ModelDownloadWorkerTest {
 
     @Test
     fun testDownloadWarning() = runBlocking {
-        modelCacheModule.setModel(createCachedModel())
+        modelCache.setModel(createCachedModel())
 
         val result = buildWorker().doWork()
 
@@ -96,7 +94,7 @@ class ModelDownloadWorkerTest {
         assertTrue(result is ListenableWorker.Result.Success)
         val modelFile = File(context.getDir("ml_models", Context.MODE_PRIVATE), "model.tflite")
         assertTrue(modelFile.exists())
-        assertNotNull(modelCacheModule.getModel())
+        assertNotNull(modelCache.getModel())
     }
 
     private fun buildWorker(runAttemptCount: Int = 0): ModelDownloadWorker {
@@ -111,7 +109,7 @@ class ModelDownloadWorkerTest {
                     appContext,
                     workerParameters,
                     FakeModelDownloader(context),
-                    modelCacheModule
+                    modelCache
                 )
             }
         }
