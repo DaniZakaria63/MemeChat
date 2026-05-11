@@ -29,7 +29,14 @@ class ModelDownloadWorker @AssistedInject constructor(
             return Result.success(workDataOf("warning" to "Model already exists"))
         }
 
-        val downloadResult = modelDownloader.getModel(DEFAULT_MODEL_DOWNLOADER_URI)
+        val downloadResult = modelDownloader.getModel(DEFAULT_MODEL_DOWNLOADER_URI) { downloaded, total ->
+            setProgressAsync(
+                workDataOf(
+                    PROGRESS_BYTES to downloaded,
+                    PROGRESS_TOTAL_BYTES to total
+                )
+            )
+        }
 
         if (!downloadResult.isSuccess) {
             if (runAttemptCount < MAX_RETRIES) {
@@ -72,6 +79,8 @@ class ModelDownloadWorker @AssistedInject constructor(
         private val TAG = ModelDownloadWorker::class.simpleName
         private val MAX_RETRIES = 3
         const val WORK_TAG = "model_download"
+        const val PROGRESS_BYTES = "progress_bytes"
+        const val PROGRESS_TOTAL_BYTES = "progress_total_bytes"
 
         // Test Only
         const val TEST_MODEL_URI = "http://192.168.0.103:39983/dummy.txt"

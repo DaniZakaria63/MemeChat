@@ -36,7 +36,7 @@ object NetworkModule {
         @DefaultPoligemmaDownloadClassModel okHttpClient: OkHttpClient
     ): WalaweClientAPI {
         return Retrofit.Builder()
-            .baseUrl("http://localhost:8080/")
+            .baseUrl(BuildConfig.BASE_URL)
             .client(okHttpClient)
             .build()
             .create(WalaweClientAPI::class.java)

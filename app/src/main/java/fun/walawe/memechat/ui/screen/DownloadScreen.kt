@@ -40,7 +40,10 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import `fun`.walawe.memechat.R
+import `fun`.walawe.memechat.model.DownloadStatus
+import `fun`.walawe.memechat.model.DownloadUiState
 import `fun`.walawe.memechat.presenter.DownloadViewModel
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 @Composable
@@ -48,14 +51,13 @@ fun DownloadScreen(
     viewModel: DownloadViewModel = hiltViewModel(),
     onCompleted: () -> Unit
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
-    val errorMessage by viewModel.errorState.collectAsStateWithLifecycle()
-
-    val currentState = when {
-        errorMessage != null -> DownloadState.ERROR
-        isDownloading -> DownloadState.LOADING
-        else -> DownloadState.SUCCESS
+    val currentState = when (uiState.status) {
+        DownloadStatus.Error -> DownloadState.ERROR
+        DownloadStatus.Completed -> DownloadState.SUCCESS
+        DownloadStatus.Downloading -> DownloadState.LOADING
+        else -> DownloadState.LOADING
     }
 
     LaunchedEffect(currentState) {
@@ -71,20 +73,20 @@ fun DownloadScreen(
         label = "DownloadStateTransition"
     ) { state ->
         when (state) {
-            DownloadState.SUCCESS -> DownloadLoadingScreen(isComplete = true)
+            DownloadState.SUCCESS -> DownloadLoadingScreen(isComplete = true, uiState = uiState)
             DownloadState.ERROR -> DownloadErrorScreen(
-                message = errorMessage.orEmpty().ifEmpty { "Please retry." },
-                onRetry = { }
+                message = uiState.errorMessage.orEmpty().ifEmpty { "Please retry." },
+                onRetry = viewModel::retryDownload
             )
 
-            else -> DownloadLoadingScreen(isComplete = false)
+            else -> DownloadLoadingScreen(isComplete = false, uiState = uiState)
         }
     }
 }
 
 
 @Composable
-private fun DownloadLoadingScreen(isComplete: Boolean) {
+private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState) {
     val compositionRes = if (isComplete) R.raw.lottieflow_success else R.raw.lottieflow_loading
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(compositionRes))
     val progress by animateLottieCompositionAsState(
@@ -122,6 +124,20 @@ private fun DownloadLoadingScreen(isComplete: Boolean) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                if (uiState.totalBytes > 0L) {
+                    Text(
+                        text = "${formatBytes(uiState.bytesDownloaded)} / ${formatBytes(uiState.totalBytes)} (${uiState.progressPercent}%)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (uiState.bytesDownloaded > 0L) {
+                    Text(
+                        text = "${formatBytes(uiState.bytesDownloaded)} downloaded",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(32.dp))
                 LinearProgressIndicator(
                     modifier = Modifier
@@ -191,8 +207,19 @@ private fun DownloadErrorScreen(
 }
 
 
-private enum class DownloadState { LOADING, ERROR, COMPLETED, SUCCESS }
+private enum class DownloadState { LOADING, ERROR, SUCCESS }
 
+private fun formatBytes(bytes: Long): String {
+    val kb = 1024.0
+    val mb = kb * 1024
+    val gb = mb * 1024
+    return when {
+        bytes >= gb -> String.format(Locale.US, "%.2f GB", bytes / gb)
+        bytes >= mb -> String.format(Locale.US, "%.2f MB", bytes / mb)
+        bytes >= kb -> String.format(Locale.US, "%.2f KB", bytes / kb)
+        else -> "$bytes B"
+    }
+}
 
 @Preview
 @Composable
@@ -205,11 +232,11 @@ fun PreviewDownloadErrorScreen(){
 @Preview
 @Composable
 fun PreviewDownloadLoadingScreen(){
-    DownloadLoadingScreen(isComplete = false)
+    DownloadLoadingScreen(isComplete = false, uiState = DownloadUiState())
 }
 
 @Preview
 @Composable
 fun PreviewDownloadCompleteScreen(){
-    DownloadLoadingScreen(isComplete = true)
+    DownloadLoadingScreen(isComplete = true, uiState = DownloadUiState())
 }
