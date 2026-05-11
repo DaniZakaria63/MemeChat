@@ -24,11 +24,6 @@ class ModelDownloadWorker @AssistedInject constructor(
     private val modelCache: ModelCache,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
-        if (modelCache.getModel() != null) {
-            Timber.d("Model already cached, skipping download")
-            return Result.success(workDataOf("warning" to "Model already exists"))
-        }
-
         val downloadResult = modelDownloader.getModel(DEFAULT_MODEL_DOWNLOADER_URI) { downloaded, total ->
             setProgressAsync(
                 workDataOf(

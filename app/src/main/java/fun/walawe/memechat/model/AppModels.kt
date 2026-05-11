@@ -63,3 +63,9 @@ data class SettingsUiState(
     val modelInfo: List<Pair<String, String>> = emptyList(),
     val cacheInfo: List<Pair<String, String>> = emptyList(),
 )
+
+sealed class Screen(val route: String) {
+    object Download : Screen("download")
+    object Chat : Screen("chat")
+    object Settings : Screen("settings")
+}

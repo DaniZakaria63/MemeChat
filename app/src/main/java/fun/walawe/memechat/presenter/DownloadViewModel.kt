@@ -31,10 +31,6 @@ class DownloadViewModel @Inject constructor(
         observeWorker()
     }
 
-    fun retryDownload() {
-        enqueueDownloadWorker()
-    }
-
     private fun observeWorker() {
         viewModelScope.launch {
             WorkManager.getInstance(context)
@@ -93,7 +89,7 @@ class DownloadViewModel @Inject constructor(
         }
     }
 
-    private fun enqueueDownloadWorker() {
+    fun retryDownload() {
         val request = OneTimeWorkRequest.Builder(ModelDownloadWorker::class.java)
             .setBackoffCriteria(
                 backoffPolicy = BackoffPolicy.EXPONENTIAL,
