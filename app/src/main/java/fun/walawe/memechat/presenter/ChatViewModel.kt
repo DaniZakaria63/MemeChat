@@ -29,7 +29,7 @@ class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
     private val inferenceRepository: InferenceRepository,
     private val imageDecoder: ImageDecoder,
-) : ViewModel() {
+) : BaseViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = _uiState.asStateFlow()
 
@@ -37,7 +37,7 @@ class ChatViewModel @Inject constructor(
     val messages = _messages.asStateFlow()
 
     init {
-        viewModelScope.launch {
+        safeViewModelScope.launch {
             prepareModel()
         }
     }

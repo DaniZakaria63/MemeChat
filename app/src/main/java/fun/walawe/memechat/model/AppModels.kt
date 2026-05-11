@@ -51,6 +51,7 @@ data class ChatUiState(
     val isDownloading: Boolean = false,
     val isModelReady: Boolean = false,
     val isProcessing: Boolean = false,
+    val isNewConversation: Boolean = true,
     val selectedImageUri: String? = null,
     val errorMessage: String? = null,
     val errorId: Long = 0L,
