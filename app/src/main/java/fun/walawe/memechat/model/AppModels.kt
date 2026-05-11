@@ -1,5 +1,7 @@
 package `fun`.walawe.memechat.model
 
+import `fun`.walawe.memelm.inference.InferenceEngine.State
+
 data class ModelDescriptor(
     val name: String,
     val quantization: String,
@@ -48,15 +50,19 @@ data class DownloadUiState(
 }
 
 data class ChatUiState(
-    val isDownloading: Boolean = false,
-    val isModelReady: Boolean = false,
-    val isProcessing: Boolean = false,
     val isNewConversation: Boolean = true,
+    val isProcessing: Boolean = false,
     val selectedImageUri: String? = null,
-    val errorMessage: String? = null,
-    val errorId: Long = 0L,
     val modelDescriptor: ModelDescriptor? = null,
+    val error: String? = null,
 )
+
+sealed class ModelState{
+    object Initializing : ModelState()
+    object LoadingModel : ModelState()
+    object ModelReady : ModelState()
+    object Generating : ModelState()
+}
 
 data class SettingsUiState(
     val deviceInfo: List<Pair<String, String>> = emptyList(),

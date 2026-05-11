@@ -51,7 +51,7 @@ class ModelRepository @Inject constructor(
         ggufReader.load(modelPath)
         if (!ggufReader.isExpectedQwenModel(EXPECTED_MODEL_BASENAME)) {
             return@withContext Result.failure(
-                IllegalArgumentException("Unexpected GGUF model. Expected ${EXPECTED_MODEL_BASENAME}")
+                IllegalArgumentException("Unexpected GGUF model. Expected $EXPECTED_MODEL_BASENAME")
             )
         }
 

@@ -24,6 +24,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+        buildConfigField("String", "BASENAME_QWEN3_VL_MODEL",project.properties["BASENAME_QWEN3_VL_MODEL"].toString())
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -68,6 +69,10 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.31.6"
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 }
 
