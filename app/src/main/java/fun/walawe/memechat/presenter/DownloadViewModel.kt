@@ -48,8 +48,13 @@ class DownloadViewModel @Inject constructor(
             return
         }
 
-        val bytesDownloaded = info.progress.getLong(ModelDownloadWorker.PROGRESS_BYTES, 0L)
-        val totalBytes = info.progress.getLong(ModelDownloadWorker.PROGRESS_TOTAL_BYTES, 0L)
+        val progress = info.progress
+        val bytesDownloaded = progress.getLong(ModelDownloadWorker.PROGRESS_BYTES, 0L)
+        val totalBytes = progress.getLong(ModelDownloadWorker.PROGRESS_TOTAL_BYTES, 0L)
+        val fileName = progress.getString(ModelDownloadWorker.PROGRESS_FILE_NAME)
+            ?: info.outputData.getString(ModelDownloadWorker.PROGRESS_FILE_NAME)
+        val fileIndex = progress.getInt(ModelDownloadWorker.PROGRESS_FILE_INDEX, 0)
+        val fileCount = progress.getInt(ModelDownloadWorker.PROGRESS_FILE_COUNT, 0)
 
         when (info.state) {
             WorkInfo.State.SUCCEEDED -> {
@@ -59,6 +64,9 @@ class DownloadViewModel @Inject constructor(
                         errorMessage = null,
                         bytesDownloaded = bytesDownloaded,
                         totalBytes = totalBytes,
+                        fileName = fileName,
+                        fileIndex = fileIndex,
+                        fileCount = fileCount,
                     )
                 }
             }
@@ -71,6 +79,9 @@ class DownloadViewModel @Inject constructor(
                         errorMessage = null,
                         bytesDownloaded = bytesDownloaded,
                         totalBytes = totalBytes,
+                        fileName = fileName,
+                        fileIndex = fileIndex,
+                        fileCount = fileCount,
                     )
                 }
             }
@@ -83,6 +94,9 @@ class DownloadViewModel @Inject constructor(
                         errorMessage = message,
                         bytesDownloaded = bytesDownloaded,
                         totalBytes = totalBytes,
+                        fileName = fileName,
+                        fileIndex = fileIndex,
+                        fileCount = fileCount,
                     )
                 }
             }

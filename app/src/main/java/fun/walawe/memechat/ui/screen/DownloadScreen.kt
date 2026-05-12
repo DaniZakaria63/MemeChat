@@ -124,6 +124,22 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
+                if (!uiState.fileName.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = uiState.fileName.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (uiState.fileCount > 0 && uiState.fileIndex > 0) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "File ${uiState.fileIndex} of ${uiState.fileCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 if (uiState.totalBytes > 0L) {
                     Text(
