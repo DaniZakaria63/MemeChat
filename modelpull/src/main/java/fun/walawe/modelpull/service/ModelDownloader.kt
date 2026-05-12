@@ -2,11 +2,11 @@ package `fun`.walawe.modelpull.service
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
+import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import `fun`.walawe.modelpull.model.BadRequestException
-import `fun`.walawe.modelpull.model.CachePaligemmaModel
-import `fun`.walawe.modelpull.model.DEFAULT_LAST_MODEL_NAME
-import `fun`.walawe.modelpull.model.DEFAULT_MODEL_DOWNLOADER_URI
+import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.NotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,7 +21,7 @@ interface ModelDownloader {
     suspend fun getModel(
         uri: String,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit = { _, _ -> }
-    ): Result<CachePaligemmaModel>
+    ): Result<CacheModel>
 }
 
 class LocalModelDownloader @Inject constructor(
@@ -39,13 +39,13 @@ class LocalModelDownloader @Inject constructor(
     override suspend fun getModel(
         uri: String,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
-    ): Result<CachePaligemmaModel> {
-        val defaultModelName = DEFAULT_LAST_MODEL_NAME
+    ): Result<CacheModel> {
+        val defaultModelName = MODEL_FILENAME_MINICPM
         val localFile = File(modelDir, defaultModelName)
 
         if (localFile.exists()) {
             Timber.d("Model already exists locally")
-            return Result.success(CachePaligemmaModel(
+            return Result.success(CacheModel(
                 modelId = Uuid.random().toString(),
                 displayName = defaultModelName,
                 localFileDir = modelDir.absolutePath,
@@ -90,7 +90,7 @@ class LocalModelDownloader @Inject constructor(
             return Result.failure(NotFoundException("Downloaded file is empty"))
         }
 
-        val cacheModel = CachePaligemmaModel(
+        val cacheModel = CacheModel(
             modelId = Uuid.random().toString(),
             displayName = defaultModelName,
             localFileName = defaultModelName,
