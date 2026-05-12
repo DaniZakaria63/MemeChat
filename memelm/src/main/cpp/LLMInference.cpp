@@ -1,15 +1,25 @@
 //
 // Created by dani on 5/6/26.
 //
-#include "LLMInference.h"
-#include "logging.h"
-#include "mtmd.h"
-#include "mtmd-helper.h"
+#include <android/log.h>
 #include <android/bitmap.h>
+#include <jni.h>
+#include <iomanip>
+#include <cmath>
+#include <string>
+#include <unistd.h>
 #include <vector>
 #include <cstring>
 #include <fstream>
 #include <sys/stat.h>
+
+#include "logging.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
+#include "logging.h"
+#include "llama.h"
+#include "LLMInference.h"
+
 
 using namespace std;
 
@@ -20,16 +30,16 @@ static void llamaAndroidLogCallback(ggml_log_level level, const char* text, void
     if (text == nullptr) return;
     switch (level) {
         case GGML_LOG_LEVEL_ERROR:
-            LOGE("llama: %s", text);
+            LOGe("llama: %s", text);
             break;
         case GGML_LOG_LEVEL_WARN:
-            LOGI("llama[warn]: %s", text);
+            LOGi("llama[warn]: %s", text);
             break;
         case GGML_LOG_LEVEL_INFO:
-            LOGI("llama: %s", text);
+            LOGi("llama: %s", text);
             break;
         default:
-            LOGI("llama: %s", text);
+            LOGi("llama: %s", text);
             break;
     }
 }
@@ -38,7 +48,7 @@ static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
     AndroidBitmapInfo info;
     AndroidBitmap_getInfo(env, bitmap, &info);
     if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
-        LOGE("Only RGBA_8888 supported");
+        LOGe("Only RGBA_8888 supported");
         return {};
     }
     void* pixels;
@@ -63,6 +73,15 @@ static const char* TOK_USER      = "user\n";
 static const char* TOK_ASSISTANT = "assistant\n";
 static const char* MEDIA_TOKEN   = "<__media__>\n";
 
+constexpr int   N_THREADS_MIN           = 2;
+constexpr int   N_THREADS_MAX           = 4;
+constexpr int   N_THREADS_HEADROOM      = 2;
+
+constexpr int   DEFAULT_CONTEXT_SIZE    = 2048;
+constexpr int   OVERFLOW_HEADROOM       = 4;
+constexpr int   BATCH_SIZE              = 64;
+constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;
+
 static string buildPrompt(const string& systemPrompt, const string& userPrompt) {
     string result;
     result += TOK_IM_START;
@@ -80,6 +99,7 @@ static string buildPrompt(const string& systemPrompt, const string& userPrompt) 
     result += TOK_ASSISTANT;
     return result;
 }
+
 string LLMInference::generateTokens(int n_past, int max_new_tokens) {
     string response;
     char piece_buf[256];
@@ -112,7 +132,7 @@ string LLMInference::generateTokens(int n_past, int max_new_tokens) {
         batch.logits   = &logit_val;
 
         if (llama_decode(m_ctx, batch) != 0) {
-            LOGE("Decode failed");
+            LOGe("Decode failed");
             break;
         }
         n_past++;
@@ -128,7 +148,7 @@ std::vector<llama_token> LLMInference::tokenize(const string& text, bool add_spe
     std::vector<llama_token> tokens(std::max(1, n_ctx));
     int n = llama_tokenize(m_vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), add_special, parse_special);
     if (n < 0) {
-        LOGE("Tokenization failed");
+        LOGe("Tokenization failed");
         return {};
     }
     tokens.resize(n);
@@ -140,49 +160,52 @@ std::vector<llama_token> LLMInference::tokenize(const string& text, bool add_spe
 // ---------------------------------------------------------------------------
 bool LLMInference::init(const char* modelPath, const char* mmprojPath,
                         const char* backendPath, int contextSize, bool useVulkan) {
-    LOGI("init: modelPath=%s mmprojPath=%s backendPath=%s contextSize=%d useVulkan=%d",
+
+    LOGi("Init Model: modelPath=%s mmprojPath=%s backendPath=%s contextSize=%d useVulkan=%d",
          modelPath, mmprojPath, backendPath, contextSize, useVulkan ? 1 : 0);
-    llama_log_set(llamaAndroidLogCallback, nullptr);
-
-    // Backend loading is handled by the ggml build (CPU/Vulkan), so no dynamic load here.
-
-    long long modelSize = getFileSize(modelPath);
-    long long mmprojSize = getFileSize(mmprojPath);
-    LOGI("init: model size=%lld mmproj size=%lld", modelSize, mmprojSize);
-
-    char magic[4] = {0};
-    if (readFileHeader(modelPath, magic, sizeof(magic))) {
-        LOGI("init: model header=%.4s", magic);
-    } else {
-        LOGE("init: failed to read model header");
-    }
 
     llama_backend_init();
-    llama_numa_init(GGML_NUMA_STRATEGY_DISABLED);
 
     // 1. Load LLM
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = useVulkan ? 99 : 0;
+    model_params.use_mmap  = true;
+    model_params.use_mlock = false;
+    model_params.n_gpu_layers = useVulkan ? 9999 : 0;
+    model_params.vocab_only   = false;
+    model_params.check_tensors = false;
+
     m_model = llama_model_load_from_file(modelPath, model_params);
     if (!m_model) {
-        LOGE("init: llama_model_load_from_file failed, retrying with mmap=0");
+        LOGi("unable to load model, initModel: Try 2");
         model_params.use_mmap = false;
         model_params.use_mlock = false;
         m_model = llama_model_load_from_file(modelPath, model_params);
         if (!m_model) {
-            LOGE("init: llama_model_load_from_file failed after retry");
+            LOGe("initModel: Failed to load model from %s",  __func__);
             return false;
         }
     }
 
-    // Context
+    // Context Initiation
+    const int n_threads = std::max(N_THREADS_MIN, std::min(N_THREADS_MAX,
+                                                           (int) sysconf(_SC_NPROCESSORS_ONLN) -
+                                                           N_THREADS_HEADROOM));
+    LOGi("%s: Using %d threads", __func__, n_threads);
+
     llama_context_params ctx_params = llama_context_default_params();
+    const int trained_context_size = llama_model_n_ctx_train(m_model);
+    if (contextSize > trained_context_size) {
+        LOGw("%s: Model was trained with only %d context size! Enforcing %d context size...",
+             __func__, trained_context_size, contextSize);
+    }
     ctx_params.n_ctx = contextSize;
-    ctx_params.n_batch = 64;
-    ctx_params.n_ubatch = 64;
+    ctx_params.n_batch = BATCH_SIZE;
+    ctx_params.n_ubatch = BATCH_SIZE;
+    ctx_params.n_threads = n_threads;
+    ctx_params.n_threads_batch = n_threads;
     m_ctx = llama_init_from_model(m_model, ctx_params);
-    if (!m_ctx) {
-        LOGE("init: llama_init_from_model failed");
+    if (m_ctx == nullptr) {
+        LOGe("%s: llama_init_from_model() returned null", __func__);
         llama_model_free(m_model);
         m_model = nullptr;
         return false;
@@ -197,7 +220,7 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     mtmd_params.print_timings = false;
     m_mtmd_ctx = mtmd_init_from_file(mmprojPath, m_model, mtmd_params);
     if (!m_mtmd_ctx) {
-        LOGE("init: mtmd_init_from_file failed");
+        LOGe("init: mtmd_init_from_file failed");
         llama_free(m_ctx);
         llama_model_free(m_model);
         m_ctx = nullptr;
@@ -206,12 +229,14 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     }
 
     m_gpuUsed = useVulkan;
-    LOGI("Model loaded. GPU layers requested, Vulkan %s", m_gpuUsed ? "active" : "off");
+    LOGi("Model loaded. GPU layers requested, Vulkan %s", m_gpuUsed ? "active" : "off");
 
     // 3. Create greedy sampler
-    auto sparams = llama_sampler_chain_default_params();
-    m_smpl = llama_sampler_chain_init(sparams);
+    auto sampler_params = llama_sampler_chain_default_params();
+    sampler_params.no_perf = true;
+    m_smpl = llama_sampler_chain_init(sampler_params);
     llama_sampler_chain_add(m_smpl, llama_sampler_init_greedy());
+    LOGi("Sample params created");
 
     return true;
 }
@@ -245,7 +270,7 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, bitmaps, 1);
     mtmd_bitmap_free(bmp);
     if (res != 0) {
-        LOGE("mtmd_tokenize failed (%d)", res);
+        LOGe("mtmd_tokenize failed (%d)", res);
         mtmd_input_chunks_free(chunks);
         return "";
     }
@@ -253,7 +278,7 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     // 5. Evaluate all chunks (text + image)
     llama_pos n_past;
     if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, 0, 0, 64, true, &n_past) != 0) {
-        LOGE("Chunk evaluation failed");
+        LOGe("Chunk evaluation failed");
         mtmd_input_chunks_free(chunks);
         return "";
     }
@@ -292,7 +317,7 @@ std::string LLMInference::processTextOnly(const char* prompt) {
     mtmd_input_chunks* chunks = mtmd_input_chunks_init();
     int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
     if (res != 0) {
-        LOGE("mtmd_tokenize (text) failed (%d)", res);
+        LOGe("mtmd_tokenize (text) failed (%d)", res);
         mtmd_input_chunks_free(chunks);
         return "";
     }
@@ -300,7 +325,7 @@ std::string LLMInference::processTextOnly(const char* prompt) {
     // Evaluate the text‑only chunks – mtmd handles KV cache automatically
     llama_pos n_past;
     if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, 0, 0, 64, true, &n_past) != 0) {
-        LOGE("Text chunk evaluation failed");
+        LOGe("Text chunk evaluation failed");
         mtmd_input_chunks_free(chunks);
         return "";
     }

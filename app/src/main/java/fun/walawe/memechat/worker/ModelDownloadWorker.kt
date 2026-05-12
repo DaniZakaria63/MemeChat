@@ -11,6 +11,8 @@ import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.constant.DEFAULT_MMPROJ_DOWNLOADER_URI
 import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
 import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.MODEL_FILENAME_QWEN
+import `fun`.walawe.constant.MODEL_FILENAME_QWEN_MMPROJ
 import `fun`.walawe.constant.orZero
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheKey
@@ -33,13 +35,13 @@ class ModelDownloadWorker @AssistedInject constructor(
         val targets = listOf(
             DownloadTarget(
                 uri = DEFAULT_MODEL_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM,
+                fileName = MODEL_FILENAME_QWEN,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Model
             ),
             DownloadTarget(
                 uri = DEFAULT_MMPROJ_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM_MMPROJ,
+                fileName = MODEL_FILENAME_QWEN_MMPROJ,
                 cacheModel = true,
                 keyCacheModel = CacheKey.MMPROJ
             )

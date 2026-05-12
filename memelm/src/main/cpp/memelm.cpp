@@ -14,8 +14,10 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeInit(
 
     const char* model = env->GetStringUTFChars(modelPath, nullptr);
     const char* mmproj = env->GetStringUTFChars(mmprojPath, nullptr);
-    const char* backend = env->GetStringUTFChars(backendPath, nullptr);
+    const auto *backend = env->GetStringUTFChars(backendPath, 0);
+
     bool ok = g_inference.init(model, mmproj, backend, contextSize, useVulkan);
+
     env->ReleaseStringUTFChars(modelPath, model);
     env->ReleaseStringUTFChars(mmprojPath, mmproj);
     env->ReleaseStringUTFChars(backendPath, backend);
