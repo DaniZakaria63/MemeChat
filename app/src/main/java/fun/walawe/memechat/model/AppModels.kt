@@ -1,15 +1,5 @@
 package `fun`.walawe.memechat.model
 
-import `fun`.walawe.memelm.inference.InferenceEngine.State
-
-data class ModelDescriptor(
-    val name: String,
-    val quantization: String,
-    val fileSizeBytes: Long,
-    val path: String,
-    val contextLength: Long?,
-)
-
 enum class ChatRole {
     User,
     Assistant,
@@ -53,7 +43,6 @@ data class ChatUiState(
     val isNewConversation: Boolean = true,
     val isProcessing: Boolean = false,
     val selectedImageUri: String? = null,
-    val modelDescriptor: ModelDescriptor? = null,
     val error: String? = null,
 )
 

@@ -7,9 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import `fun`.walawe.memechat.data.InferenceRepository
 import `fun`.walawe.memechat.data.ModelRepository
-import `fun`.walawe.memechat.model.ModelDescriptor
 import `fun`.walawe.memechat.model.SettingsUiState
 import `fun`.walawe.memelm.HardwareAccelerationChecker
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +21,6 @@ import kotlin.math.roundToInt
 class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val modelRepository: ModelRepository,
-    private val inferenceRepository: InferenceRepository,
     private val accelerationChecker: HardwareAccelerationChecker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -53,7 +50,6 @@ class SettingsViewModel @Inject constructor(
 
     fun clearModelAndCache() {
         modelRepository.clearCache()
-        inferenceRepository.unload()
         refresh()
     }
 
@@ -80,12 +76,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private suspend fun buildModelInfo(): List<Pair<String, String>> {
-        val descriptor = loadModelDescriptor()
         return listOf(
-            "Model" to (descriptor?.name ?: "Not loaded"),
-            "Quantization" to (descriptor?.quantization ?: "Unknown"),
-            "File Size" to (descriptor?.fileSizeBytes?.let { formatBytes(it) } ?: "Unknown"),
-            "Context" to (descriptor?.contextLength?.toString() ?: "Unknown"),
         )
     }
 
@@ -96,12 +87,14 @@ class SettingsViewModel @Inject constructor(
             "Tokens" to "N/A",
         )
     }
+/*
 
     private suspend fun loadModelDescriptor(): ModelDescriptor? {
         val cached = modelRepository.getCachedModel() ?: return null
         val modelPath = modelRepository.resolveModelPath(cached)
         return modelRepository.validateAndDescribe(modelPath).getOrNull()
     }
+*/
 
     private fun formatBytes(bytes: Long): String {
         val gb = 1024.0 * 1024 * 1024

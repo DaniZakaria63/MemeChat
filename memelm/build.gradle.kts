@@ -32,7 +32,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += listOf()
-                arguments += "-DLLAMA_DIR=${rootProject.projectDir}/../llama.cpp"
+                arguments += "-DLLAMA_DIR=${rootProject.projectDir}/llama.cpp"
                 arguments += "-DGGML_VULKAN=ON"
 
                 arguments += "-DCMAKE_BUILD_TYPE=Release"

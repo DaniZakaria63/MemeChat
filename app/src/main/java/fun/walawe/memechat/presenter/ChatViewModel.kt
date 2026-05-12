@@ -1,26 +1,24 @@
 package `fun`.walawe.memechat.presenter
 
-import android.net.Uri
-import androidx.compose.runtime.MutableState
-import androidx.lifecycle.ViewModel
+import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import `fun`.walawe.memechat.BuildConfig
+import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
 import `fun`.walawe.memechat.data.ImageDecoder
-import `fun`.walawe.memechat.data.InferenceRepository
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
-import `fun`.walawe.memechat.model.ModelDescriptor
-import `fun`.walawe.memechat.model.ModelState
+import `fun`.walawe.memelm.inference.InferenceEngine
+import `fun`.walawe.memelm.inference.InferenceParams
+import `fun`.walawe.memelm.inference.isUninterruptible
+import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -29,18 +27,23 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
-import androidx.core.net.toUri
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
-    private val inferenceRepository: InferenceRepository,
     private val imageDecoder: ImageDecoder,
+    private val inferenceEngine: InferenceEngine,
 ) : BaseViewModel() {
-    private val _modelState: MutableStateFlow<ModelState> = MutableStateFlow(ModelState.Initializing)
+
+    private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.UnloadingModel).also { flow ->
+        safeViewModelScope.launch {
+            inferenceEngine.state.collect{flow.emit(it)}
+        }
+    }
+
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState = combine(_uiState, _modelState, errorState){ ui, model, error ->
-        ui.copy(isProcessing = model !is ModelState.Generating, error = error)
+        ui.copy(isProcessing = model.isUninterruptible , error = error)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatUiState())
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -52,10 +55,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-
     fun sendMessage(message: String) {
         if (message.isBlank()) return
-        if (_modelState.value !is ModelState.ModelReady) {
+        if (_modelState.value !is InferenceEngine.State.ModelReady) {
             postError("Model is not ready yet")
             return
         }
@@ -77,13 +79,12 @@ class ChatViewModel @Inject constructor(
             isStreaming = true,
         )
 
-        _messages.update { listOf(assistantMessage, userMessage) + it }
+        _messages.update {  it + listOf(assistantMessage, userMessage)}
         _uiState.update { it.copy(isNewConversation = false) }
-        _modelState.update { ModelState.Generating }
 
         viewModelScope.launch {
             try {
-                inferenceRepository.sendMessage(message).collect { token ->
+                inferenceEngine.sendUserPrompt(message).collect { token ->
                     if (token.isNotEmpty()) {
                         appendToAssistant(assistantId, token)
                     }
@@ -101,7 +102,7 @@ class ChatViewModel @Inject constructor(
 
     fun sendImageMessage(message: String, imageUri: String) {
         if (message.isBlank()) return
-        if (_modelState.value !is ModelState.ModelReady) {
+        if (_modelState.value !is InferenceEngine.State.ModelReady) {
             postError("Model is not ready yet")
             return
         }
@@ -125,14 +126,13 @@ class ChatViewModel @Inject constructor(
 
         _messages.update { listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
-        _modelState.update { ModelState.Generating }
 
         viewModelScope.launch {
             try {
                 val bitmap = withContext(Dispatchers.IO) {
                     imageDecoder.decode(imageUri.toUri())
                 }
-                inferenceRepository.sendImageMessage(message, bitmap).collect { token ->
+                inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { token ->
                     if (token.isNotEmpty()) {
                         appendToAssistant(assistantId, token)
                     }
@@ -149,36 +149,28 @@ class ChatViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        inferenceRepository.destroy()
+        inferenceEngine.destroy()
         super.onCleared()
     }
 
     private suspend fun prepareModel() {
-        val modelDescriptor = modelRepository.getCachedModelDescriptor().getOrElse { error ->
+        val modelAbsolutePath = modelRepository.getCachedModel().getOrElse { error ->
             postError(error.message ?: "Model is not downloaded yet")
             return
         }
 
-        _uiState.update { it.copy(modelDescriptor = modelDescriptor) }
-        loadModel(modelDescriptor)
+        _uiState.update { it.copy(isNewConversation = true) }
+        loadModel(modelAbsolutePath)
     }
 
-    private suspend fun loadModel(descriptor: ModelDescriptor) {
-        _modelState.update { ModelState.LoadingModel }
-        try {
-            inferenceRepository.loadModel(descriptor.path, BuildConfig.DEFAULT_SYSTEM_PROMPT)
-            val mmprojFile = modelRepository.findMmprojFile(descriptor.path)
-            if (mmprojFile != null) {
-                inferenceRepository.initVision(
-                    mmprojPath = mmprojFile.absolutePath,
-                    mediaMarker = BuildConfig.DEFAULT_MEDIA_MARKER,
-                    useGpu = true,
-                    warmup = true,
-                )
+    private fun loadModel(path: String) {
+        safeViewModelScope.launch {
+            inferenceEngine.loadModel(
+                pathToModel = path,
+                params = InferenceParams.getDefault()
+            ).also {
+                inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
             }
-            _modelState.update { ModelState.ModelReady }
-        } catch (e: Exception) {
-            postError(e.message ?: "Failed to initialize model")
         }
     }
 
@@ -204,7 +196,6 @@ class ChatViewModel @Inject constructor(
                 }
             }
         }
-        _modelState.update { ModelState.Generating }
     }
 
     fun setSelectedImageUri(uri: String?) {

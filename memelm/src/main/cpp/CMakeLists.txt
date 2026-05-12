@@ -1,139 +1,37 @@
 cmake_minimum_required(VERSION 3.31.6)
-project("memelm" VERSION 1.0.0 LANGUAGES C CXX)
+project("memelm")
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED true)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED true)
-
-set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}"   CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "" FORCE)
-
-# Force static backend registration on Android to avoid runtime backend loading failures.
-set(GGML_BACKEND_DL OFF)
-set(GGML_CPU ON)
-set(GGML_CPU_ALL_VARIANTS OFF)
-
-add_subdirectory(../../../../llama.cpp llama.cpp)
-set(LLAMA_DIR_RELATIVE "../../../../llama.cpp")
-
-get_filename_component(LLAMA_DIR ${LLAMA_DIR_RELATIVE} ABSOLUTE)
-
-set(GGML_DIR ${LLAMA_DIR}/ggml)
-set(COMMON_DIR ${LLAMA_DIR}/common)
-set(VENDOR_DIR ${LLAMA_DIR}/vendor)
-
-set(GGML_VULKAN ON)
-set(LLAMA_CURL OFF)
-set(LLAMA_MULTIMODAL ON)
-
-if(DEFINED ANDROID_ABI)
-    message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
-    if(ANDROID_ABI STREQUAL "arm64-v8a")
-        set(GGML_SYSTEM_ARCH "ARM")
-        set(GGML_CPU_KLEIDIAI ON)
-        set(GGML_OPENMP ON)
-    elseif(ANDROID_ABI STREQUAL "x86_64")
-        set(GGML_SYSTEM_ARCH "x86")
-        set(GGML_CPU_KLEIDIAI OFF)
-        set(GGML_OPENMP OFF)
-    else()
-        message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
-    endif()
+# llama.cpp as a sub‑project (with Vulkan ON)
+if(NOT DEFINED LLAMA_DIR)
+    message(FATAL_ERROR "LLAMA_DIR is not defined. Pass it via Gradle arguments.")
 endif()
 
-add_subdirectory(${LLAMA_DIR}/tools/mtmd mtmd EXCLUDE_FROM_ALL)
-
-# Compiler flags for size optimization and symbol hiding
-target_compile_options(llama PUBLIC -fvisibility=hidden -fvisibility-inlines-hidden)
-target_compile_options(llama PUBLIC -ffunction-sections -fdata-sections)
-target_link_options(llama PRIVATE -Wl,--gc-sections -flto -Wl,--exclude-libs,ALL)
-
-# Link Vulkan backend only when available.
-function(link_vulkan_if_available target_name)
-    if(TARGET ggml-vulkan)
-        target_link_libraries(${target_name} ggml-vulkan vulkan)
-    else()
-        message(WARNING "ggml-vulkan target not found; building without Vulkan backend")
-    endif()
-endfunction()
-
-# Build the shared library
-function(build_library target_name)
-    add_library(${target_name} SHARED LLMInference.cpp memelm.cpp)
-    target_include_directories(${target_name} PUBLIC
-            ${COMMON_DIR}
-            ${GGML_DIR}/include
-            ${GGML_DIR}/src
-            ${GGML_DIR}/src/ggml-cpu
-            ${LLAMA_DIR}/include
-            ${VENDOR_DIR}
+set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan backend" FORCE)
+if(GGML_VULKAN AND ANDROID)
+    # Android NDK contains glslc under shader-tools/<host_tag>/
+    set(NDK_SHADER_TOOLS "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}")
+    find_program(Vulkan_GLSLC_EXECUTABLE
+            NAMES glslc
+            PATHS "${NDK_SHADER_TOOLS}"
+            NO_DEFAULT_PATH
+            REQUIRED
     )
+    message(STATUS "Using NDK glslc: ${Vulkan_GLSLC_EXECUTABLE}")
+endif()
 
-    target_compile_options(${target_name} PUBLIC -ffunction-sections -fdata-sections)
-    target_link_libraries(${target_name} android log llama mtmd)
-    link_vulkan_if_available(${target_name})
-    target_link_options(
-            ${target_name}
-            PRIVATE
-            -Wl,--gc-sections -flto
-            -Wl,--exclude-libs,ALL
-    )
-endfunction()
+set(BUILD_TOOLS ON CACHE BOOL "Build mtmd tools library" FORCE)
+add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama_build)
 
-function(build_library_universal target_name)
-    build_library(${target_name})
-    target_compile_options(
-            ${target_name}
-            PUBLIC
-    )
-endfunction()
-
-build_library_universal("memelm")
-
-# Apply project-wide settings to the memelm target after it exists.
-target_compile_definitions(memelm PRIVATE
-        GGML_SYSTEM_ARCH=${GGML_SYSTEM_ARCH}
-        GGML_CPU_KLEIDIAI=$<BOOL:${GGML_CPU_KLEIDIAI}>
-        GGML_OPENMP=$<BOOL:${GGML_OPENMP}>
+# JNI Libraries
+add_library(memelm SHARED
+        memelm.cpp
+        GGUFReader.cpp
+        LLMInference.cpp
 )
 
 target_include_directories(memelm PRIVATE
         ${LLAMA_DIR}
-        ${LLAMA_DIR}/include
-        ${LLAMA_DIR}/ggml/include
+        ${LLAMA_DIR}/examples/llava
 )
 
-target_link_libraries(memelm
-        llama
-        llama-common
-        android
-        log
-)
-link_vulkan_if_available(memelm)
-
-# library target for GGUFReader
-set(TARGET_NAME_GGUF_READER ggufreader)
-add_library(${TARGET_NAME_GGUF_READER} SHARED GGUFReader.cpp)
-target_include_directories(
-        ${TARGET_NAME_GGUF_READER}
-        PUBLIC
-        ${GGML_DIR}/include
-        ${GGML_DIR}/src
-)
-target_compile_options(
-        ${TARGET_NAME_GGUF_READER}
-        PUBLIC
-        -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections
-)
-target_link_libraries(
-        ${TARGET_NAME_GGUF_READER}
-        ggml
-)
-target_link_options(
-        ${TARGET_NAME_GGUF_READER}
-        PRIVATE
-        -Wl,--gc-sections -flto
-        -Wl,--exclude-libs,ALL
-)
+target_link_libraries(memelm mtmd llama log)
