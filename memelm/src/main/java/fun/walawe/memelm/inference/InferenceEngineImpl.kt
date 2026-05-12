@@ -96,7 +96,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
         }
     }
 
-    override suspend fun loadModel(pathToModel: String, params: InferenceParams) {
+    override suspend fun loadModel(pathToModel: String, pathToMMProj: String, params: InferenceParams) {
         withContext(llamaDispatcher) {
             check(_state.value is InferenceEngine.State.Initialized) {
                 "Engine not initialized"
@@ -113,6 +113,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
 
                 nativeInit(
                     modelPath = pathToModel,
+                    mmprojPath = pathToMMProj,
                     contextSize = params.contextSize.orZero().toInt(),
                     useVulkan = params.useVulkanBackend.orFalse()
                 ).let { result->

@@ -20,6 +20,7 @@ import kotlin.uuid.Uuid
 interface ModelDownloader {
     suspend fun getModel(
         uri: String,
+        fileName: String = MODEL_FILENAME_MINICPM,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): Result<CacheModel>
 }
@@ -38,18 +39,18 @@ class LocalModelDownloader @Inject constructor(
     @OptIn(ExperimentalUuidApi::class)
     override suspend fun getModel(
         uri: String,
+        fileName: String,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
     ): Result<CacheModel> {
-        val defaultModelName = MODEL_FILENAME_MINICPM
-        val localFile = File(modelDir, defaultModelName)
+        val localFile = File(modelDir, fileName)
 
         if (localFile.exists()) {
             Timber.d("Model already exists locally")
             return Result.success(CacheModel(
                 modelId = Uuid.random().toString(),
-                displayName = defaultModelName,
+                displayName = fileName,
                 localFileDir = modelDir.absolutePath,
-                localFileName = defaultModelName,
+                localFileName = fileName,
                 fileCache = localFile,
             ))
         }
@@ -92,8 +93,8 @@ class LocalModelDownloader @Inject constructor(
 
         val cacheModel = CacheModel(
             modelId = Uuid.random().toString(),
-            displayName = defaultModelName,
-            localFileName = defaultModelName,
+            displayName = fileName,
+            localFileName = fileName,
             localFileDir = modelDir.absolutePath,
             fileCache = localFile,
             downloadedAt = System.currentTimeMillis(),

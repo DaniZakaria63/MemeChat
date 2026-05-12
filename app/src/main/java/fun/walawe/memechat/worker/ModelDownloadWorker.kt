@@ -8,7 +8,13 @@ import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
+import `fun`.walawe.constant.DEFAULT_MMPROJ_DOWNLOADER_URI
+import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
+import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.orZero
 import `fun`.walawe.modelpull.model.BadRequestException
+import `fun`.walawe.modelpull.model.CacheKey
+import `fun`.walawe.modelpull.model.DownloadTarget
 import `fun`.walawe.modelpull.model.IllegalURILinkIdException
 import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
@@ -24,48 +30,106 @@ class ModelDownloadWorker @AssistedInject constructor(
     private val modelCache: ModelCache,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
-        val downloadResult = modelDownloader.getModel(DEFAULT_MODEL_DOWNLOADER_URI) { downloaded, total ->
+        val targets = listOf(
+            DownloadTarget(
+                uri = DEFAULT_MODEL_DOWNLOADER_URI,
+                fileName = MODEL_FILENAME_MINICPM,
+                cacheModel = true,
+                keyCacheModel = CacheKey.Model
+            ),
+            DownloadTarget(
+                uri = DEFAULT_MMPROJ_DOWNLOADER_URI,
+                fileName = MODEL_FILENAME_MINICPM_MMPROJ,
+                cacheModel = true,
+                keyCacheModel = CacheKey.MMPROJ
+            )
+        )
+
+        var lastProgressUpdateMs = 0L
+        var lastReportedBytes = 0L
+        val fileCount = targets.size
+
+        fun updateProgress(
+            target: DownloadTarget,
+            fileIndex: Int,
+            downloaded: Long,
+            total: Long,
+            force: Boolean = false,
+        ) {
+            val now = System.currentTimeMillis()
+            val shouldThrottle =
+                !force &&
+                downloaded != total &&
+                (now - lastProgressUpdateMs) < PROGRESS_THROTTLE_MS &&
+                (downloaded - lastReportedBytes) < MIN_PROGRESS_BYTES
+
+            if (shouldThrottle) return
+
+            lastProgressUpdateMs = now
+            lastReportedBytes = downloaded
             setProgressAsync(
                 workDataOf(
+                    PROGRESS_FILE_NAME to target.fileName,
+                    PROGRESS_FILE_URI to target.uri,
+                    PROGRESS_FILE_INDEX to (fileIndex + 1),
+                    PROGRESS_FILE_COUNT to fileCount,
                     PROGRESS_BYTES to downloaded,
                     PROGRESS_TOTAL_BYTES to total
                 )
             )
         }
 
-        if (!downloadResult.isSuccess) {
-            if (runAttemptCount < MAX_RETRIES) {
-                Timber.d("Retrying download (attempt ${runAttemptCount + 1}/${MAX_RETRIES})")
-                return Result.retry()
+        for ((index, target) in targets.withIndex()) {
+            updateProgress(target, index, 0L, 0L, force = true)
+
+            val downloadResult = modelDownloader.getModel(target.uri, target.fileName) { downloaded, total ->
+                updateProgress(target, index, downloaded, total)
             }
 
-            val error = when(val exception = downloadResult.exceptionOrNull()) {
-                is UnknownHostException -> NotFoundException("Server unreachable")
-                else -> BadRequestException("Failed to download model: ${exception?.message}")
+            if (!downloadResult.isSuccess) {
+                if (runAttemptCount < MAX_RETRIES) {
+                    Timber.d("Retrying download (attempt ${runAttemptCount + 1}/${MAX_RETRIES})")
+                    return Result.retry()
+                }
+
+                val error = when(val exception = downloadResult.exceptionOrNull()) {
+                    is UnknownHostException -> NotFoundException("Server unreachable")
+                    else -> BadRequestException("Failed to download model: ${exception?.message}")
+                }
+
+                return Result.failure(workDataOf(
+                    "error_type" to error::class.simpleName,
+                    "error_message" to error.message,
+                    PROGRESS_FILE_NAME to target.fileName,
+                    PROGRESS_FILE_URI to target.uri
+                ))
             }
 
-            return Result.failure(workDataOf(
-                "error_type" to error::class.simpleName,
-                "error_message" to error.message
-            ))
-        }
-
-        val cacheModel = downloadResult.getOrNull() ?: return Result.failure(workDataOf(
-            "error_type" to IllegalURILinkIdException::class.simpleName,
-            "error_message" to "Invalid model URI or link ID"
-        ))
-
-        if (cacheModel.localFileName.isBlank()) {
-            return Result.failure(workDataOf(
+            val cacheModel = downloadResult.getOrNull() ?: return Result.failure(workDataOf(
                 "error_type" to IllegalURILinkIdException::class.simpleName,
-                "error_message" to "Invalid model URI or link ID"
+                "error_message" to "Invalid model URI or link ID",
+                PROGRESS_FILE_NAME to target.fileName,
+                PROGRESS_FILE_URI to target.uri
             ))
+
+            if (cacheModel.localFileName.isBlank()) {
+                return Result.failure(workDataOf(
+                    "error_type" to IllegalURILinkIdException::class.simpleName,
+                    "error_message" to "Invalid model URI or link ID",
+                    PROGRESS_FILE_NAME to target.fileName,
+                    PROGRESS_FILE_URI to target.uri
+                ))
+            }
+
+            Timber.d("Model downloaded successfully: ${cacheModel.displayName}")
+            if (target.cacheModel) {
+                modelCache.setModel(target.keyCacheModel, cacheModel) // Static memory cache
+                Timber.d("Model metadata saved to settings")
+            }
+
+            val finalSize = cacheModel.fileCache?.length().orZero().coerceAtLeast(0L)
+            updateProgress(target, index, finalSize, finalSize, force = true)
         }
-
-        Timber.d("Model downloaded successfully: ${cacheModel.displayName}")
-
-        modelCache.setModel(cacheModel) // Static memory cache
-        Timber.d("Model metadata saved to settings")
 
         return Result.success(workDataOf("info" to "Model downloaded successfully"))
     }
@@ -76,6 +140,12 @@ class ModelDownloadWorker @AssistedInject constructor(
         const val WORK_TAG = "model_download"
         const val PROGRESS_BYTES = "progress_bytes"
         const val PROGRESS_TOTAL_BYTES = "progress_total_bytes"
+        const val PROGRESS_FILE_NAME = "progress_file_name"
+        const val PROGRESS_FILE_URI = "progress_file_uri"
+        const val PROGRESS_FILE_INDEX = "progress_file_index"
+        const val PROGRESS_FILE_COUNT = "progress_file_count"
+        private const val PROGRESS_THROTTLE_MS = 200L
+        private const val MIN_PROGRESS_BYTES = 64 * 1024L
 
         // Test Only
         const val TEST_MODEL_URI = "http://192.168.0.103:39983/dummy.txt"

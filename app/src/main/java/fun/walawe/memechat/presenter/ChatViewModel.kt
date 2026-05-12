@@ -12,6 +12,7 @@ import `fun`.walawe.memechat.model.ChatUiState
 import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceParams
 import `fun`.walawe.memelm.inference.isUninterruptible
+import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -154,19 +155,25 @@ class ChatViewModel @Inject constructor(
     }
 
     private suspend fun prepareModel() {
-        val modelAbsolutePath = modelRepository.getCachedModel().getOrElse { error ->
+        val modelAbsolutePath = modelRepository.getCachedModel(CacheKey.Model).getOrElse { error ->
             postError(error.message ?: "Model is not downloaded yet")
             return
         }
 
+        val mmprojAbsolutePath = modelRepository.getCachedModel(CacheKey.MMPROJ).getOrElse { error ->
+            postError(error.message ?: "MMProj is not downloaded yet")
+            return
+        }
+
         _uiState.update { it.copy(isNewConversation = true) }
-        loadModel(modelAbsolutePath)
+        loadModel(modelAbsolutePath, mmprojAbsolutePath)
     }
 
-    private fun loadModel(path: String) {
+    private fun loadModel(model: String, mmproj: String) {
         safeViewModelScope.launch {
             inferenceEngine.loadModel(
-                pathToModel = path,
+                pathToModel = model,
+                pathToMMProj = mmproj,
                 params = InferenceParams.getDefault()
             ).also {
                 inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)

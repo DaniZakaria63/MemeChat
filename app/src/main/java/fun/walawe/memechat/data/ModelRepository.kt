@@ -1,5 +1,6 @@
 package `fun`.walawe.memechat.data
 
+import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.Dispatchers
@@ -12,24 +13,14 @@ import javax.inject.Singleton
 class ModelRepository @Inject constructor(
     private val modelCache: ModelCache,
 ) {
-    suspend fun getCachedModel(): Result<String> = withContext(Dispatchers.IO) {
-        val cached = modelCache.getModel() ?: return@withContext Result.failure(
+    suspend fun getCachedModel(key: CacheKey): Result<String> = withContext(Dispatchers.IO) {
+        val cached = modelCache.getModel(key) ?: return@withContext Result.failure(
             IllegalStateException("Model not downloaded yet")
         )
         Result.success(resolveModelPath(cached))
     }
 
-    fun clearCache(): Result<Unit> {
-        val cached = modelCache.getModel()
-        val cachedFile = cached?.fileCache
-        if (cachedFile != null && cachedFile.exists()) {
-            if (!cachedFile.delete()) {
-                return Result.failure(IllegalStateException("Failed to delete cached model"))
-            }
-        }
-        modelCache.clearModel()
-        return Result.success(Unit)
-    }
+    fun clearCache(): Result<Unit> = modelCache.deleteAllCachedFiles()
 
     fun resolveModelPath(cacheModel: CacheModel): String {
         cacheModel.fileCache?.let { return it.absolutePath }

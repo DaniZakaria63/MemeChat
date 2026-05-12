@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 interface InferenceEngine {
     val state: StateFlow<State>
 
-    suspend fun loadModel(pathToModel: String, params: InferenceParams)
+    suspend fun loadModel(pathToModel: String, pathToMMProj: String, params: InferenceParams)
 
     suspend fun setSystemPrompt(systemPrompt: String)
 

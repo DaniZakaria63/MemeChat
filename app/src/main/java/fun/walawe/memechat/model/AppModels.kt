@@ -27,6 +27,9 @@ data class DownloadUiState(
     val errorMessage: String? = null,
     val bytesDownloaded: Long = 0L,
     val totalBytes: Long = 0L,
+    val fileName: String? = null,
+    val fileIndex: Int = 0,
+    val fileCount: Int = 0,
 ) {
     val isDownloading: Boolean
         get() = status == DownloadStatus.Downloading
