@@ -6,7 +6,6 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import `fun`.walawe.memelm.gguf.GGUFReader
 import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceEngineImpl
 import javax.inject.Singleton
@@ -19,10 +18,6 @@ object MemeLMModule {
     fun provideInferenceEngine(
         @ApplicationContext context: Context
     ): InferenceEngine = InferenceEngineImpl.getInstance(context)
-
-    @Provides
-    @Singleton
-    fun provideGgufReader(): GGUFReader = GGUFReader()
 
     @Provides
     @Singleton

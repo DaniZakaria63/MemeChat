@@ -7,8 +7,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.modelpull.model.BadRequestException
-import `fun`.walawe.modelpull.model.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.modelpull.model.IllegalURILinkIdException
 import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException

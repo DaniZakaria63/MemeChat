@@ -13,10 +13,6 @@ android {
 
     defaultConfig {
         minSdk = 24
-        buildConfigField("String", "TAG", "\"WALAWE_MODEL_PULL\"")
-        buildConfigField("String", "BASE_URL",project.properties["BASE_URL"].toString())
-        buildConfigField("String", "QWEN_MODEL_FILENAME", project.properties["FILENAME_QWEN3_VL_EMBEDDING"].toString())
-        buildConfigField("String", "PALIGEMMA_MODEL_FILENAME",project.properties["FILENAME_PALIGEMMA_MIX_224"].toString())
 
         testInstrumentationRunner = "fun.walawe.modelpull.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
@@ -27,13 +23,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures {
-        buildConfig = true
-    }
 
 }
 
 dependencies {
+
+    implementation(project(":constant"))
     implementation(libs.androidx.core.ktx)
 
     // Hilt

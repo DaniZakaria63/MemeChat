@@ -20,9 +20,6 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", project.properties["DEFAULT_SYSTEM_PROMPT"].toString())
-        buildConfigField("String", "DEFAULT_MEDIA_MARKER", project.properties["DEFAULT_MEDIA_MARKER"].toString())
-
         testInstrumentationRunner = "fun.walawe.memechat.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
     }
@@ -47,6 +44,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":constant"))
     implementation(project(":modelpull"))
     implementation(project(":memelm"))
 
