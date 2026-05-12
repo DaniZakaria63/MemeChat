@@ -4,9 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import dalvik.annotation.optimization.FastNative
-import `fun`.walawe.memelm.BuildConfig
-import `fun`.walawe.memelm.gguf.GGUFReader
-import java.io.ByteArrayOutputStream
+import `fun`.walawe.constant.orFalse
+import `fun`.walawe.constant.orZero
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -23,32 +22,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
-class InferenceEngineImpl private constructor(
-    private val nativeLibDir: String
-) : InferenceEngine {
+class InferenceEngineImpl private constructor() : InferenceEngine {
     companion object {
         private val TAG = InferenceEngineImpl::class.java.simpleName
-        private const val DEFAULT_PREDICT_LENGTH = 1024
-        private const val DEFAULT_NUM_THREADS = 4
 
         @Volatile
         private var instance: InferenceEngine? = null
 
-        /**
-         * Create or obtain [InferenceEngineImpl]'s single instance.
-         *
-         * @param Context for obtaining native library directory
-         * @throws IllegalArgumentException if native library path is invalid
-         * @throws UnsatisfiedLinkError if library failed to load
-         */
         fun getInstance(context: Context) =
             instance ?: synchronized(this) {
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 require(nativeLibDir.isNotBlank()) { "Expected a valid native library path!" }
-                System.loadLibrary("memelm")
+
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
-                    InferenceEngineImpl(nativeLibDir).also { instance = it }
+                    InferenceEngineImpl().also { instance = it }
                 } catch (e: UnsatisfiedLinkError) {
                     Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
                     throw e
@@ -63,55 +51,29 @@ class InferenceEngineImpl private constructor(
      */
 
     @FastNative
-    private external fun loadModel(
-        modelPath: String,
-        minP: Float,
-        temperature: Float,
-        storeChats: Boolean,
-        contextSize: Long,
-        chatTemplate: String,
-        numThreads: Int,
-        useMmap: Boolean,
-        useMlock: Boolean,
-    ): Long
+    external fun nativeInit(modelPath: String, contextSize: Int, useVulkan: Boolean): Boolean
 
     @FastNative
-    private external fun addChatMessage(modelPtr: Long, message: String, role: String)
+    external fun nativeSetSystemPrompt(prompt: String)
 
     @FastNative
-    private external fun startCompletion(modelPtr: Long, prompt: String)
+    external fun nativeProcessImageAndText(bitmap: Bitmap, prompt: String): String
 
     @FastNative
-    private external fun completionLoop(modelPtr: Long): String
+    external fun nativeProcessTextOnly(prompt: String): String
 
     @FastNative
-    private external fun close(modelPtr: Long)
+    external fun nativeGetBackendInfo(): String
 
     @FastNative
-    private external fun initVision(
-        modelPtr: Long,
-        mmprojPath: String,
-        mediaMarker: String,
-        numThreads: Int,
-        useGpu: Boolean,
-        warmup: Boolean,
-    )
-
-    @FastNative
-    private external fun startCompletionWithImage(modelPtr: Long, prompt: String, imageBytes: ByteArray)
-
+    external fun nativeRelease()
 
     private val _state = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
 
-    private var readyForSystemPrompt = false
-    private var cancelGeneration = false
-
     @OptIn(ExperimentalCoroutinesApi::class)
     private val llamaDispatcher = Dispatchers.IO.limitedParallelism(1)
     private val llamaScope = CoroutineScope(llamaDispatcher + SupervisorJob())
-    private val ggufReader = GGUFReader()
-    private var nativePtr: Long = 0L
 
     init {
         llamaScope.launch {
@@ -139,39 +101,26 @@ class InferenceEngineImpl private constructor(
             Log.i(TAG, "Loading model: $pathToModel")
 
             try {
-                val file = File(pathToModel)
-                if (!file.exists() || !file.isFile || file.length() <= 0L) {
-                    throw IllegalStateException("Model file missing or empty: $pathToModel")
+                File(pathToModel).let {
+                    require(it.exists()) { "File not found" }
+                    require(it.isFile) { "Not a valid file" }
+                    require(it.canRead()) { "Cannot read file" }
                 }
 
-                ggufReader.load(pathToModel)
-                val isExpected = ggufReader.isExpectedQwenModel(BuildConfig.BASENAME_QWEN3_VL_MODEL)
-                if (!isExpected) {
-                    throw IllegalArgumentException("Unexpected GGUF model. Expected ${BuildConfig.BASENAME_QWEN3_VL_MODEL}")
-                }
-
-                val ggufContext = ggufReader.getContextSize()
-                val contextSize = when {
-                    ggufContext == null -> params.contextSize
-                    ggufContext <= params.contextSize -> ggufContext
-                    else -> params.contextSize
-                }
-                val chatTemplate = ggufReader.getChatTemplate() ?: params.chatTemplate.orEmpty()
-                Log.i(TAG, "Using context size: $contextSize (gguf=$ggufContext)")
-
-                nativePtr = loadModelNativeWithFallback(
+                nativeInit(
                     modelPath = pathToModel,
-                    params = params,
-                    contextSize = contextSize,
-                    chatTemplate = chatTemplate
-                )
+                    contextSize = params.contextSize.orZero().toInt(),
+                    useVulkan = params.useVulkanBackend.orFalse()
+                ).let { result->
+                    _state.value = if(result){
+                        InferenceEngine.State.ModelReady
+                    } else throw Exception("Model load failed from $TAG")
 
-                readyForSystemPrompt = true
-                _state.value = InferenceEngine.State.ModelReady
-                Log.i(TAG, "Model loaded and ready")
+                    Log.i(TAG, "Model loaded and ready")
+                }
             } catch (e: Exception) {
                 _state.value = InferenceEngine.State.Error(e)
-                Log.e(TAG, "Model load failed", e)
+                Log.e(TAG, e.message.toString(),e)
                 throw e
             }
         }
@@ -180,13 +129,11 @@ class InferenceEngineImpl private constructor(
     override suspend fun setSystemPrompt(systemPrompt: String) {
         withContext(llamaDispatcher) {
             require(systemPrompt.isNotBlank()) { "System prompt cannot be blank" }
-            check(readyForSystemPrompt) { "System prompt must be set immediately after loading the model" }
 
             _state.value = InferenceEngine.State.ProcessingSystemPrompt
             Log.i(TAG, "Processing system prompt")
             try {
-                addChatMessage(nativePtr, systemPrompt, "system")
-                readyForSystemPrompt = false
+                nativeSetSystemPrompt(systemPrompt)
                 _state.value = InferenceEngine.State.ModelReady
             } catch (e: Exception) {
                 _state.value = InferenceEngine.State.Error(e)
@@ -196,24 +143,32 @@ class InferenceEngineImpl private constructor(
         }
     }
 
-    override fun sendUserPrompt(message: String, predictLength: Int): Flow<String> = flow {
-        check(message.isNotBlank()) { "User prompt cannot be blank" }
+    override suspend fun getBackendInfo(): String =
+        withContext(llamaDispatcher) {
+            check(state.value.isModelLoaded) { "Model not ready" }
+            Log.i(TAG, "getBackendInfo from $TAG")
+            try {
+                nativeGetBackendInfo()
+            } catch (e: Exception) {
+                _state.value = InferenceEngine.State.Error(e)
+                Log.e(TAG, " getBackendInfo failed", e)
+                throw e
+            }
+        }
+
+    override fun sendUserPrompt(message: String): Flow<String> = flow {
+        require(message.isNotEmpty()) { "User prompt discarded due to being empty!" }
         check(state.value.isModelLoaded) { "Model not ready" }
 
-        cancelGeneration = false
-        _state.value = InferenceEngine.State.ProcessingUserPrompt
         Log.i(TAG, "Processing user prompt")
+        _state.value = InferenceEngine.State.Generating
         try {
-            startCompletion(nativePtr, message)
-            _state.value = InferenceEngine.State.Generating
-            var piece = completionLoop(nativePtr)
-            while (piece != "[EOG]") {
-                if (piece.isNotEmpty()) {
-                    emit(piece)
+            nativeProcessTextOnly(message).let { result ->
+                if (result.isNotEmpty()) {
+                    emit(result)
                 }
-                piece = completionLoop(nativePtr)
+                _state.value = InferenceEngine.State.ModelReady
             }
-            _state.value = InferenceEngine.State.ModelReady
         } catch (e: CancellationException) {
             _state.value = InferenceEngine.State.ModelReady
             throw e
@@ -224,26 +179,19 @@ class InferenceEngineImpl private constructor(
         }
     }.flowOn(llamaDispatcher)
 
-    override suspend fun sendUserPromptWithImage(message: String, bitmap: Bitmap, predictLength: Int): Flow<String> = flow {
+    override fun sendUserPromptWithImage(bitmap: Bitmap, message: String): Flow<String> = flow {
         check(message.isNotBlank()) { "User prompt cannot be blank" }
         check(state.value.isModelLoaded) { "Model not ready" }
 
-        cancelGeneration = false
-        _state.value = InferenceEngine.State.ProcessingUserPrompt
+        _state.value = InferenceEngine.State.Generating
         Log.i(TAG, "Processing user prompt with image")
-        val imageBytes = bitmapToPngBytes(bitmap)
-
         try {
-            _state.value = InferenceEngine.State.Generating
-            startCompletionWithImage(nativePtr, message, imageBytes)
-            var piece = completionLoop(nativePtr)
-            while (piece != "[EOG]") {
-                if (piece.isNotEmpty()) {
-                    emit(piece)
+            nativeProcessImageAndText(bitmap, message).let { result->
+                if (result.isNotEmpty()) {
+                    emit(result)
                 }
-                piece = completionLoop(nativePtr)
+                _state.value = InferenceEngine.State.ModelReady
             }
-            _state.value = InferenceEngine.State.ModelReady
         } catch (e: CancellationException) {
             _state.value = InferenceEngine.State.ModelReady
             throw e
@@ -254,90 +202,9 @@ class InferenceEngineImpl private constructor(
         }
     }.flowOn(llamaDispatcher)
 
-    override suspend fun initVision(mmprojPath: String, mediaMarker: String, useGpu: Boolean, warmup: Boolean) {
-        withContext(llamaDispatcher) {
-            check(state.value.isModelLoaded) { "Model not ready" }
-            Log.i(TAG, "Initializing vision adapter: $mmprojPath")
-            val numThreads = DEFAULT_NUM_THREADS
-            try {
-                initVision(nativePtr, mmprojPath, mediaMarker, numThreads, useGpu, warmup)
-            } catch (e: Exception) {
-                _state.value = InferenceEngine.State.Error(e)
-                Log.e(TAG, "Vision init failed", e)
-                throw e
-            }
-        }
-    }
-
-    override suspend fun bench(pp: Int, tg: Int, pl: Int, nr: Int): String {
-        return withContext(llamaDispatcher) {
-            _state.value = InferenceEngine.State.Benchmarking
-            Log.i(TAG, "Benchmark requested, returning stub")
-            _state.value = InferenceEngine.State.ModelReady
-            "Benchmark not implemented in memelm JNI"
-        }
-    }
-
-    override fun cleanUp() {
-        cancelGeneration = true
-        readyForSystemPrompt = false
-        _state.value = InferenceEngine.State.Initialized
-        Log.i(TAG, "Model unloaded")
-    }
-
     override fun destroy() {
-        cancelGeneration = true
-        if (nativePtr != 0L) {
-            close(nativePtr)
-            nativePtr = 0
-        }
+        nativeRelease()
         llamaScope.cancel()
-        _state.value = InferenceEngine.State.Uninitialized
         Log.i(TAG, "Inference engine destroyed")
     }
-
-    private fun bitmapToPngBytes(bitmap: Bitmap): ByteArray {
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        return stream.toByteArray()
-    }
-
-    private fun loadModelNativeWithFallback(
-        modelPath: String,
-        params: InferenceParams,
-        contextSize: Long,
-        chatTemplate: String,
-    ): Long {
-        return try {
-            loadModel(
-                modelPath = modelPath,
-                minP = params.minP,
-                temperature = params.temperature,
-                storeChats = params.storeChats,
-                contextSize = contextSize,
-                chatTemplate = chatTemplate,
-                numThreads = params.numThreads,
-                useMmap = params.useMmap,
-                useMlock = params.useMlock
-            )
-        } catch (e: Exception) {
-            val canRetry = params.useMmap && (e.message?.contains("Failed to load model") == true)
-            if (!canRetry) {
-                throw e
-            }
-            Log.w(TAG, "Model load failed with mmap; retrying without mmap", e)
-            loadModel(
-                modelPath = modelPath,
-                minP = params.minP,
-                temperature = params.temperature,
-                storeChats = params.storeChats,
-                contextSize = contextSize,
-                chatTemplate = chatTemplate,
-                numThreads = params.numThreads,
-                useMmap = false,
-                useMlock = params.useMlock
-            )
-        }
-    }
-
 }
