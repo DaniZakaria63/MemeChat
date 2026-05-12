@@ -51,14 +51,14 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeGetBackendInfo(
     return env->NewStringUTF(g_inference.getBackendInfo().c_str());
 }
 
-JNIEXPORT jvoid
+JNIEXPORT void
 JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeRelease(
         JNIEnv * /* env */, jobject /* this */) {
     g_inference.release();
 }
 
-JNIEXPORT jvoid
+JNIEXPORT void
 JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeSetSystemPrompt(
         JNIEnv *env, jobject /* this */, jstring prompt) {

@@ -3,10 +3,8 @@
 //
 #include "LLMInference.h"
 #include "logging.h"
-#include "GGUFReader.h"   // uses the global model context
-#include "llava.h"
-#include "clip.h"
-#include "llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 #include <android/bitmap.h>
 #include <vector>
 #include <cstring>
@@ -59,29 +57,59 @@ static string buildPrompt(const string& systemPrompt, const string& userPrompt) 
     result += TOK_ASSISTANT;
     return result;
 }
-
-std::string LLMInference::generateTokens(int max_new_tokens) {
+string LLMInference::generateTokens(int n_past, int max_new_tokens) {
     string response;
-    llama_batch batch = llama_batch_init(1, 0, 1);
-    llama_token eos = llama_token_eos(m_model);
-    int n_past = llama_n_ctx(m_ctx);   // rough – you should track n_past properly.
-    // (For simplicity, we assume n_past = prompt length. In a full implementation
-    //  you'd track it as described in the text-only function above.)
+    char piece_buf[256];
+    llama_token eos = llama_vocab_eos(m_vocab);
 
     for (int i = 0; i < max_new_tokens; i++) {
-        float* logits = llama_get_logits_ith(m_ctx, -1);
-        llama_token new_token = llama_sample_token_greedy(m_ctx, nullptr);
+        llama_token new_token = llama_sampler_sample(m_smpl, m_ctx, -1);
         if (new_token == eos) break;
 
-        response += llama_token_to_piece(m_ctx, new_token);
+        int n_piece = llama_token_to_piece(m_vocab, new_token, piece_buf, sizeof(piece_buf), 0, true);
+        if (n_piece < 0) break;
+        response.append(piece_buf, n_piece);
 
-        llama_batch_clear(batch);
-        llama_batch_add(batch, new_token, n_past, {0}, true);
-        if (llama_decode(m_ctx, batch) != 0) break;
+        // Build a one‑token batch manually
+        llama_batch batch;
+        batch.n_tokens = 1;
+        batch.token    = &new_token;
+
+        llama_pos pos = n_past;
+        batch.pos      = &pos;
+
+        int32_t n_seq = 1;
+        batch.n_seq_id = &n_seq;
+
+        llama_seq_id seq_id_val = 0;
+        llama_seq_id* seq_ids[1] = { &seq_id_val };
+        batch.seq_id   = seq_ids;
+
+        int8_t logit_val = 1;
+        batch.logits   = &logit_val;
+
+        if (llama_decode(m_ctx, batch) != 0) {
+            LOGE("Decode failed");
+            break;
+        }
         n_past++;
     }
-    llama_batch_free(batch);
+
+    llama_sampler_reset(m_smpl);
     return response;
+}
+
+std::vector<llama_token> LLMInference::tokenize(const string& text, bool add_special, bool parse_special) {
+    // Get max tokens from context size (safe upper bound)
+    int n_ctx = llama_n_ctx(m_ctx);
+    std::vector<llama_token> tokens(std::max(1, n_ctx));
+    int n = llama_tokenize(m_vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), add_special, parse_special);
+    if (n < 0) {
+        LOGE("Tokenization failed");
+        return {};
+    }
+    tokens.resize(n);
+    return tokens;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,65 +120,67 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     llama_backend_init();
     llama_numa_init(GGML_NUMA_STRATEGY_DISABLED);
 
-    // 1. LLM
+    // 1. Load LLM
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = useVulkan ? 99 : 0;
-    m_model = llama_load_model_from_file(modelPath, model_params);
+    m_model = llama_model_load_from_file(modelPath, model_params);
     if (!m_model) return false;
 
+    // Context
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = contextSize;
     ctx_params.n_batch = 64;
     ctx_params.n_ubatch = 64;
-    m_ctx = llama_new_context_with_model(m_model, ctx_params);
-    if (!m_ctx) return false;
+    m_ctx = llama_init_from_model(m_model, ctx_params);
+    if (!m_ctx) {
+        llama_model_free(m_model);
+        return false;
+    }
 
-    // 2. Multimodal projector (replaces clip+llava)
+    m_vocab = llama_model_get_vocab(m_model);
+
+    // 2. Load multimodal projector (mmproj)
     mtmd_context_params mtmd_params = mtmd_context_params_default();
     mtmd_params.use_gpu = useVulkan;
     mtmd_params.n_threads = 4;
     mtmd_params.print_timings = false;
     m_mtmd_ctx = mtmd_init_from_file(mmprojPath, m_model, mtmd_params);
     if (!m_mtmd_ctx) {
-        LOGE("mtmd_init_from_file failed");
         llama_free(m_ctx);
-        llama_free_model(m_model);
+        llama_model_free(m_model);
         return false;
     }
 
-    m_gpuLayers = llama_model_n_gpu_layers(m_model);
-    m_gpuUsed = (m_gpuLayers > 0);
-    LOGI("Model loaded. GPU layers: %d (Vulkan: %s)", m_gpuLayers, m_gpuUsed ? "YES" : "NO");
+    m_gpuUsed = useVulkan;
+    LOGI("Model loaded. GPU layers requested, Vulkan %s", m_gpuUsed ? "active" : "off");
+
+    // 3. Create greedy sampler
+    auto sparams = llama_sampler_chain_default_params();
+    m_smpl = llama_sampler_chain_init(sparams);
+    llama_sampler_chain_add(m_smpl, llama_sampler_init_greedy());
+
     return true;
 }
 
-void LLMInference::setSystemPrompt(const std::string& sysPrompt) {
-    m_systemPrompt = sysPrompt;
-}
-
 std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt) {
-    if (!m_mtmd_ctx) {
-        LOGE("MTMD not loaded");
-        return "";
-    }
+    if (!m_mtmd_ctx || !m_ctx) return "";
 
-    // 1. Convert Android Bitmap to raw RGB bytes
+    // 1. Get raw RGB bytes
     vector<uint8_t> rgb = bitmapToRGB(env, bitmap);
     if (rgb.empty()) return "";
 
-    // 2. Get bitmap dimensions from AndroidBitmapInfo (we could reuse from previous call)
     AndroidBitmapInfo info;
     AndroidBitmap_getInfo(env, bitmap, &info);
     int w = info.width, h = info.height;
 
-    // 3. Create mtmd_bitmap (takes ownership of a copy)
+    // 2. Create mtmd bitmap
     mtmd_bitmap* bmp = mtmd_bitmap_init(w, h, rgb.data());
     if (!bmp) return "";
 
-    // 4. Build full prompt (system + <__media__> + user text)
+    // 3. Build prompt
     string full_prompt = buildPrompt(m_systemPrompt, prompt);
 
-    // 5. Tokenize with mtmd – it splits the prompt around <__media__> and attaches the image
+    // 4. Tokenize with mtmd
     mtmd_input_text input_text;
     input_text.text = full_prompt.c_str();
     input_text.add_special = true;
@@ -160,32 +190,28 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     const mtmd_bitmap* bitmaps[] = { bmp };
     int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, bitmaps, 1);
     mtmd_bitmap_free(bmp);
-
     if (res != 0) {
         LOGE("mtmd_tokenize failed (%d)", res);
         mtmd_input_chunks_free(chunks);
         return "";
     }
 
-    // 6. Evaluate all chunks (text + image) in one go
-    llama_pos new_n_past;
-    if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, 0, 0, 64, true, &new_n_past) != 0) {
+    // 5. Evaluate all chunks (text + image)
+    llama_pos n_past;
+    if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, 0, 0, 64, true, &n_past) != 0) {
         LOGE("Chunk evaluation failed");
         mtmd_input_chunks_free(chunks);
         return "";
     }
     mtmd_input_chunks_free(chunks);
 
-    // 7. Generate response (uses internal m_ctx and m_model)
+    // 6. Generate response
     return generateTokens(512);
 }
 
 std::string LLMInference::processTextOnly(const char* prompt) {
     if (!m_ctx) return "";
 
-    llama_kv_cache_clear(m_ctx);
-
-    // Build prompt (system + user → assistant)
     string full_prompt;
     if (!m_systemPrompt.empty()) {
         full_prompt += TOK_IM_START;
@@ -203,35 +229,58 @@ std::string LLMInference::processTextOnly(const char* prompt) {
     full_prompt += TOK_IM_START;
     full_prompt += TOK_ASSISTANT;
 
-    vector<llama_token> tokens = llama_tokenize(m_ctx, full_prompt, true, true);
-    if (tokens.empty()) return "";
+    // Use mtmd_tokenize with 0 bitmaps
+    mtmd_input_text input_text;
+    input_text.text = full_prompt.c_str();
+    input_text.add_special = true;
+    input_text.parse_special = true;
 
-    // Decode the prompt
-    llama_batch batch = llama_batch_init(tokens.size(), 0, 1);
-    for (size_t i = 0; i < tokens.size(); i++)
-        llama_batch_add(batch, tokens[i], i, {0}, i == tokens.size()-1);
-
-    if (llama_decode(m_ctx, batch) != 0) {
-        LOGE("Initial decode failed");
-        llama_batch_free(batch);
+    mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+    int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
+    if (res != 0) {
+        LOGE("mtmd_tokenize (text) failed (%d)", res);
+        mtmd_input_chunks_free(chunks);
         return "";
     }
-    llama_batch_free(batch);
 
-    return generateTokens(512);
+    // Evaluate the text‑only chunks – mtmd handles KV cache automatically
+    llama_pos n_past;
+    if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, 0, 0, 64, true, &n_past) != 0) {
+        LOGE("Text chunk evaluation failed");
+        mtmd_input_chunks_free(chunks);
+        return "";
+    }
+    mtmd_input_chunks_free(chunks);
+
+    // Generate response
+    return generateTokens(n_past, 512);
 }
 
 std::string LLMInference::getBackendInfo() {
-    const auto& m = getModelContext();
-    if (m.gpuUsed)
-        return "GPU (Vulkan), layers offloaded: " + std::to_string(m.gpuLayers);
-    else
-        return "CPU only";
+    return m_gpuUsed ? "GPU (Vulkan) ON" : "CPU only";
 }
 
+void LLMInference::setSystemPrompt(const std::string& sysPrompt) {
+    m_systemPrompt = sysPrompt;
+}
+
+
 void LLMInference::release() {
-    if (m_mtmd_ctx)   mtmd_free(m_mtmd_ctx);
-    if (m_ctx)        llama_free(m_ctx);
-    if (m_model)      llama_free_model(m_model);
+    if (m_smpl) {
+        llama_sampler_free(m_smpl);
+        m_smpl = nullptr;
+    }
+    if (m_mtmd_ctx) {
+        mtmd_free(m_mtmd_ctx);
+        m_mtmd_ctx = nullptr;
+    }
+    if (m_ctx) {
+        llama_free(m_ctx);
+        m_ctx = nullptr;
+    }
+    if (m_model) {
+        llama_model_free(m_model);
+        m_model = nullptr;
+    }
     llama_backend_free();
 }

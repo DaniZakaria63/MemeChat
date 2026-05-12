@@ -8,30 +8,43 @@ endif()
 
 set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan backend" FORCE)
 if(GGML_VULKAN AND ANDROID)
-    # Android NDK contains glslc under shader-tools/<host_tag>/
-    set(NDK_SHADER_TOOLS "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}")
-    find_program(Vulkan_GLSLC_EXECUTABLE
-            NAMES glslc
-            PATHS "${NDK_SHADER_TOOLS}"
-            NO_DEFAULT_PATH
-            REQUIRED
-    )
+    set(Vulkan_GLSLC_EXECUTABLE "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}/glslc" CACHE FILEPATH "NDK glslc")
     message(STATUS "Using NDK glslc: ${Vulkan_GLSLC_EXECUTABLE}")
 endif()
 
-set(BUILD_TOOLS ON CACHE BOOL "Build mtmd tools library" FORCE)
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "Build mtmd library" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Skip common library" FORCE)
 add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama_build)
+
+file(GLOB_RECURSE MTMD_SOURCES
+        ${LLAMA_DIR}/tools/mtmd/*.cpp
+        ${LLAMA_DIR}/tools/mtmd/models/*.cpp
+)
+list(FILTER MTMD_SOURCES EXCLUDE REGEX ".*/mtmd-cli\\.cpp$")
+list(FILTER MTMD_SOURCES EXCLUDE REGEX ".*/mtmd/debug/.*\\.cpp$")
 
 # JNI Libraries
 add_library(memelm SHARED
         memelm.cpp
-        GGUFReader.cpp
         LLMInference.cpp
+        ${MTMD_SOURCES}
 )
 
 target_include_directories(memelm PRIVATE
         ${LLAMA_DIR}
-        ${LLAMA_DIR}/examples/llava
+        ${LLAMA_DIR}/tools/mtmd
+        ${LLAMA_DIR}/tools/mtmd/models        # for models.h and model-specific headers
+        ${LLAMA_DIR}/tools/mtmd/image         # for image preprocessor headers
+        ${LLAMA_DIR}/tools/mtmd/audio         # for audio preprocessor headers
+        ${LLAMA_DIR}/vendor                   # for miniaudio/miniaudio.h and other vendor headers
 )
 
-target_link_libraries(memelm mtmd llama log)
+find_library(vulkan-lib vulkan)
+find_library(jnigraphics-lib jnigraphics)
+
+target_link_libraries(memelm
+        llama
+        ${vulkan-lib}
+        ${jnigraphics-lib}
+        log
+)
