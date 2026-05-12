@@ -4,6 +4,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import `fun`.walawe.constant.BASE_URL_CALL
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -36,7 +37,7 @@ object NetworkModule {
         @DefaultPoligemmaDownloadClassModel okHttpClient: OkHttpClient
     ): WalaweClientAPI {
         return Retrofit.Builder()
-            .baseUrl("http://localhost:8080/")
+            .baseUrl(BASE_URL_CALL)
             .client(okHttpClient)
             .build()
             .create(WalaweClientAPI::class.java)

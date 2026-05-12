@@ -1,6 +1,8 @@
 package `fun`.walawe.memechat.ui.screen
 
 import android.content.res.Configuration
+import android.net.Uri
+import android.view.TextureView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,17 +32,23 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -54,9 +63,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,27 +89,29 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
 import `fun`.walawe.memechat.R
+import `fun`.walawe.memechat.model.ChatMessage
+import `fun`.walawe.memechat.model.ChatRole
+import `fun`.walawe.memechat.model.ChatUiState
+import `fun`.walawe.memechat.presenter.ChatViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-// Dummy models
-private data class DummyMessage(
-    val id: String,
-    val role: MessageRole,
-    val text: String,
-    val time: String,
-    val imageUri: String? = null
-)
-
-private enum class MessageRole {
-    User,
-    Assistant
-}
+import androidx.core.net.toUri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.RawResourceDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 
 private data class DummyConversation(
     val id: String,
@@ -108,80 +122,108 @@ private data class DummyConversation(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen() {
-    var messages by remember {
-        mutableStateOf(
-            listOf(
-                DummyMessage(
-                    id = "m5",
-                    role = MessageRole.User,
-                    text = "Show me the meme in a funny way.",
-                    time = "10:32",
-                    imageUri = "https://dummyimage.com/300x200/efefef/111111.png&text=Meme"
-                ),
-                DummyMessage(
-                    id = "m4",
-                    role = MessageRole.Assistant,
-                    text = "This meme is basically your CPU trying to keep up with tabs...",
-                    time = "10:33"
-                ),
-                DummyMessage(
-                    id = "m3",
-                    role = MessageRole.User,
-                    text = "Describe this image.",
-                    time = "10:31",
-                    imageUri = "https://dummyimage.com/300x200/eeeeee/333333.png&text=Image"
-                ),
-                DummyMessage(
-                    id = "m2",
-                    role = MessageRole.Assistant,
-                    text = "Looks like a cat judging your life choices.",
-                    time = "10:31"
-                ),
-                DummyMessage(
-                    id = "m1",
-                    role = MessageRole.User,
-                    text = "Hello Qwen!",
-                    time = "10:30"
-                )
-            )
-        )
-    }
+fun ChatScreen(
+    viewModel: ChatViewModel = hiltViewModel(),
+    onOpenSettings: () -> Unit = {},
+) {
+    val scope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+
     var inputText by remember { mutableStateOf("") }
-    var isProcessing by remember { mutableStateOf(false) }
-    var showImagePickerHint by remember { mutableStateOf(false) }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
 
     val conversations = remember {
         listOf(
             DummyConversation("c1", "Qwen Chat", "Latest: cat meme", "10:33"),
             DummyConversation("c2", "Work notes", "Summarize standup", "09:10"),
             DummyConversation("c3", "Trip planning", "Best places in Seoul", "Yesterday"),
-            DummyConversation("c4", "Ideas", "Brand voice notes", "Yesterday"),
-            DummyConversation("c5", "Ideas", "Brand voice notes", "Yesterday"),
-            DummyConversation("c6", "Ideas", "Brand voice notes", "Yesterday"),
-            DummyConversation("c7", "Ideas", "Brand voice notes", "Yesterday"),
+            DummyConversation("c4", "Ideas", "Brand voice notes", "Yesterday")
         )
     }
     var selectedConversationId by remember { mutableStateOf("c1") }
 
+    val context = LocalContext.current
+    val placeholderUri = remember {
+        "android.resource://${context.packageName}/${R.drawable.placeholder}".toUri()
+    }
+
+    ChatScreenContent(
+        uiState = uiState,
+        messages = messages,
+        inputText = inputText,
+        onInputChange = { inputText = it },
+        drawerState = drawerState,
+        onOpenDrawer = { scope.launch { drawerState.open() } },
+        onOpenSettings = onOpenSettings,
+        conversations = conversations,
+        selectedConversationId = selectedConversationId,
+        onNewChat = {
+            selectedConversationId = "c1"
+            // Backend integration point: create new conversation
+        },
+        onSelectConversation = { id ->
+            selectedConversationId = id
+            // Backend integration point: load conversation
+        },
+        onAttach = {
+            viewModel.setSelectedImageUri(placeholderUri.toString())
+            // Backend integration point: open image picker
+        },
+        onRemoveImage = { viewModel.setSelectedImageUri(null) },
+        onSend = {
+            if (inputText.isNotBlank() && uiState.isProcessing) {
+                val selectedImage = uiState.selectedImageUri
+                if (selectedImage == null) {
+                    viewModel.sendMessage(inputText)
+                } else {
+                    viewModel.sendImageMessage(inputText, selectedImage)
+                }
+                inputText = ""
+            }
+        },
+        onDismissError = viewModel::clearError,
+    )
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatScreenContent(
+    uiState: ChatUiState,
+    messages: List<ChatMessage>,
+    inputText: String,
+    onInputChange: (String) -> Unit,
+    drawerState: DrawerState,
+    onOpenDrawer: () -> Unit,
+    onOpenSettings: () -> Unit,
+    conversations: List<DummyConversation>,
+    selectedConversationId: String,
+    onNewChat: () -> Unit,
+    onSelectConversation: (String) -> Unit,
+    onAttach: () -> Unit,
+    onRemoveImage: () -> Unit,
+    onSend: () -> Unit,
+    onDismissError: () -> Unit,
+) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            DrawerContent(
-                conversations = conversations,
-                selectedConversationId = selectedConversationId,
-                onNewChat = {
-                    selectedConversationId = "c1"
-                    // Backend integration point: create new conversation
-                },
-                onSelectConversation = { id ->
-                    selectedConversationId = id
-                    // Backend integration point: load conversation
-                }
-            )
+            ModalDrawerSheet(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.85f),
+                drawerContainerColor = MaterialTheme.colorScheme.surface
+            ) {
+                DrawerContent(
+                    conversations = conversations,
+                    selectedConversationId = selectedConversationId,
+                    onNewChat = onNewChat,
+                    onSelectConversation = onSelectConversation,
+                    onOpenSettings = onOpenSettings
+                )
+            }
         }
     ) {
         Scaffold(
@@ -191,27 +233,16 @@ fun ChatScreen() {
             topBar = {
                 CenterAlignedTopAppBar(
                     modifier = Modifier.fillMaxWidth().shadow(4.dp),
-                    title = {
-                        Text(
-                            text = "New Chat",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
                     windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
+                    title = { Text(text = "MemeLM Chat", style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(
-                                imageVector = Icons.Filled.Menu,
-                                contentDescription = "Open drawer"
-                            )
+                        IconButton(onClick = onOpenDrawer) {
+                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Open drawer")
                         }
                     },
                     actions = {
-                        IconButton(onClick = { }) {
-                            Icon(
-                                imageVector = Icons.Outlined.AddComment,
-                                contentDescription = "New chat"
-                            )
+                        IconButton(onClick = onNewChat) {
+                            Icon(imageVector = Icons.Outlined.AddComment, contentDescription = "New Chat")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -224,25 +255,42 @@ fun ChatScreen() {
             },
             bottomBar = {
                 InputBar(
-                    message = inputText,
-                    isProcessing = isProcessing,
-                    onInputChange = {inputText = it},
-                    onAttach = { },
-                    onSend = {
-                        if (inputText.isNotBlank()) {
-                            inputText = ""
-                            isProcessing = true
-                        }
-                    }
+                    inputText = inputText,
+                    selectedImageUri = uiState.selectedImageUri,
+                    onInputChange = onInputChange,
+                    onAttach = onAttach,
+                    onRemoveImage = onRemoveImage,
+                    onSend = onSend
                 )
             }
         ) { padding ->
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                 MessageList(messages = messages)
-                if (isProcessing) {
+
+                val showIntroVideo = messages.isEmpty() &&
+                        uiState.isNewConversation
+
+                if (showIntroVideo) {
+                    LoopingWebmSnippet(
+                        uri = RawResourceDataSource.buildRawResourceUri(R.raw.scuba_cat),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+
+/*
+                if (uiState.isProcessing) {
                     LoadingOverlay()
+                }
+*/
+
+                if (!uiState.error.isNullOrEmpty()) {
+                    TransientErrorDialog(
+                        message = uiState.error,
+                        onDismiss = onDismissError,
+                    )
                 }
             }
         }
@@ -254,99 +302,92 @@ private fun DrawerContent(
     conversations: List<DummyConversation>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
-    onSelectConversation: (String) -> Unit
+    onSelectConversation: (String) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    ModalDrawerSheet {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ){
+        Column(
+            modifier =  Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(bottom = 70.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .padding(bottom = 70.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Text(text = "Conversations", style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(
+                    onClick = onNewChat,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Text(text = "Conversations", style = MaterialTheme.typography.titleMedium)
-                    OutlinedButton(
-                        onClick = onNewChat,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "New Chat")
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
-
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(conversations) { convo ->
-                        val selected = convo.id == selectedConversationId
-                        val containerColor = if (selected) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        }
-                        Column(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(containerColor)
-                                .clickable { onSelectConversation(convo.id) }
-                                .padding(12.dp)
-                                .fillMaxWidth()
-                        ) {
-                            Text(
-                                text = convo.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = convo.preview,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = convo.time,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    Icon(imageVector = Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "New Chat")
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 6.dp)
+            HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                HorizontalDivider()
-                SettingsDrawerItem(onClick = {  })
+                items(conversations) { convo ->
+                    val selected = convo.id == selectedConversationId
+                    val containerColor = if (selected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(containerColor)
+                            .clickable { onSelectConversation(convo.id) }
+                            .padding(12.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Text(text = convo.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = convo.preview,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = convo.time,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, bottom = 6.dp)
+        ) {
+            HorizontalDivider()
+            SettingsDrawerItem(onClick = onOpenSettings)
         }
     }
 }
 
 @Composable
-private fun MessageList(messages: List<DummyMessage>) {
+private fun MessageList(messages: List<ChatMessage>) {
     val listState = rememberLazyListState()
     LazyColumn(
         modifier = Modifier
@@ -364,8 +405,8 @@ private fun MessageList(messages: List<DummyMessage>) {
 }
 
 @Composable
-private fun MessageBubble(message: DummyMessage) {
-    val isUser = message.role == MessageRole.User
+private fun MessageBubble(message: ChatMessage) {
+    val isUser = message.role == ChatRole.User
     val bubbleShape = if (isUser) {
         RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomEnd = 18.dp, bottomStart = 18.dp)
     } else {
@@ -385,9 +426,7 @@ private fun MessageBubble(message: DummyMessage) {
         Card(
             shape = bubbleShape,
             colors = CardDefaults.cardColors(containerColor = bubbleColor),
-            elevation = if (isUser) CardDefaults.cardElevation(0.dp) else CardDefaults.cardElevation(
-                1.dp
-            ),
+            elevation = if (isUser) CardDefaults.cardElevation(0.dp) else CardDefaults.cardElevation(1.dp),
             modifier = Modifier.fillMaxWidth(0.9f)
         ) {
             Column(
@@ -416,7 +455,7 @@ private fun MessageBubble(message: DummyMessage) {
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = message.time,
+            text = message.timestamp,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 8.dp)
@@ -425,15 +464,14 @@ private fun MessageBubble(message: DummyMessage) {
 }
 
 @Composable
-fun InputBar(
-    message: String,
-    isProcessing: Boolean,
+private fun InputBar(
+    inputText: String,
+    selectedImageUri: String?,
     onInputChange: (String) -> Unit,
     onAttach: () -> Unit,
+    onRemoveImage: () -> Unit,
     onSend: () -> Unit
 ) {
-
-    // Input area at bottom
     Surface(
         color = Color.White,
         tonalElevation = 2.dp
@@ -443,13 +481,41 @@ fun InputBar(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            if (selectedImageUri != null) {
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(120.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    val context = LocalContext.current
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(selectedImageUri)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Selected image",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        placeholder = painterResource(id = R.drawable.placeholder)
+                    )
+                    IconButton(
+                        onClick = onRemoveImage,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Icon(imageVector = Icons.Filled.Close, contentDescription = "Remove image")
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             Surface(
                 color = MaterialTheme.colorScheme.surfaceBright,
                 shape = RoundedCornerShape(26.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 BasicTextField(
-                    value = message,
+                    value = inputText,
                     onValueChange = onInputChange,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -462,7 +528,7 @@ fun InputBar(
                     singleLine = false,
                     maxLines = 4,
                     decorationBox = { innerTextField ->
-                        if (message.isEmpty()) {
+                        if (inputText.isEmpty()) {
                             Text(
                                 text = "Explain this meme",
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -493,7 +559,7 @@ fun InputBar(
                     )
 
                     ModelButton(
-                        onClick = { },
+                        onClick = onAttach,
                         icon = Icons.Filled.Image,
                         text = "Image",
                         isHighlight = false
@@ -501,14 +567,14 @@ fun InputBar(
                 }
 
                 FloatingActionButton(
-                    onClick = { },
-                    containerColor = if (message.isNotEmpty()) {
+                    onClick = onSend,
+                    containerColor = if (inputText.isNotEmpty()) {
                         MaterialTheme.colorScheme.primaryFixed
                     } else MaterialTheme.colorScheme.primaryFixed.copy(
                         alpha = 0.8f
                     ),
                     modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowUpward,
@@ -522,22 +588,41 @@ fun InputBar(
 }
 
 @Composable
-private fun LoadingOverlay() {
-    Box(
+fun SettingsDrawerItem(onClick: () -> Unit) {
+    Surface(
         modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        color = Color.Transparent,
+        onClick = onClick
     ) {
-        val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.lottieflow_loading))
-        LottieAnimation(
-            composition = composition,
-            modifier = Modifier.size(120.dp),
-            iterations = Int.MAX_VALUE
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "Settings",
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = "Settings",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.Black
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = Color.Gray.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
-
 
 @Composable
 fun ModelButton(
@@ -582,48 +667,161 @@ fun ModelButton(
     }
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun SettingsDrawerItem(onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        color = Color.Transparent,
-        onClick = onClick
+private fun LoopingWebmSnippet(
+    uri: Uri,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val renderFactory = remember {
+        DefaultRenderersFactory(context)
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+    }
+    val exoPlayer = remember(uri) {
+        ExoPlayer.Builder(context, renderFactory).build().apply {
+            val mediaItem = MediaItem.fromUri(uri)
+            setMediaItem(mediaItem)
+            repeatMode = Player.REPEAT_MODE_ONE
+            volume = 0f
+            prepare()
+            playWhenReady = true
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose { exoPlayer.release() }
+    }
+
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(24.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Settings",
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
+            AndroidView(
+                modifier = Modifier.height(180.dp).width(180.dp).clip(RoundedCornerShape(16.dp)),
+                factory = { ctx ->
+                    /*TextureView(ctx).also { textureView ->
+                        exoPlayer.setVideoTextureView(textureView)
+                    }*/
+
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                }
             )
+            Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Settings",
-                fontSize = 15.sp,
+                text = "Hi, nerd!",
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.Black
+                color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "What meme you got today?",
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+    }
+
+}
+
+@Composable
+private fun LoadingOverlay() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
+        contentAlignment = Alignment.Center
+    ) {
+        val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.lottieflow_loading))
+        LottieAnimation(
+            composition = composition,
+            modifier = Modifier.size(120.dp),
+            iterations = Int.MAX_VALUE
+        )
+    }
+}
+
+@Composable
+private fun TransientErrorDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.TopStart
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.errorContainer,
+            tonalElevation = 2.dp
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd)) {
             Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Color.Gray.copy(alpha = 0.6f),
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Dismiss error",
+                tint = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.size(20.dp)
             )
         }
     }
 }
+
 @Preview(showBackground = true)
 @Composable
 private fun ChatScreenPreviewLight() {
     MaterialTheme {
         Surface {
-            ChatScreen()
+            ChatScreenContent(
+                uiState = ChatUiState(),
+                messages = listOf(
+                    ChatMessage(
+                        id = "m1",
+                        role = ChatRole.User,
+                        text = "Hello Qwen!",
+                        timestamp = "10:30",
+                    ),
+                    ChatMessage(
+                        id = "m2",
+                        role = ChatRole.Assistant,
+                        text = "Hi there!",
+                        timestamp = "10:31",
+                    )
+                ),
+                inputText = "",
+                onInputChange = {},
+                drawerState = rememberDrawerState(DrawerValue.Closed),
+                onOpenDrawer = {},
+                onOpenSettings = {},
+                conversations = emptyList(),
+                selectedConversationId = "",
+                onNewChat = {},
+                onSelectConversation = {},
+                onAttach = {},
+                onRemoveImage = {},
+                onSend = {},
+                onDismissError = {},
+            )
         }
     }
 }
@@ -636,7 +834,23 @@ private fun ChatScreenPreviewLight() {
 private fun ChatScreenPreviewDark() {
     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy()) {
         Surface(color = MaterialTheme.colorScheme.background) {
-            ChatScreen()
+            ChatScreenContent(
+                uiState = ChatUiState(),
+                messages = emptyList(),
+                inputText = "",
+                onInputChange = {},
+                drawerState = rememberDrawerState(DrawerValue.Closed),
+                onOpenDrawer = {},
+                onOpenSettings = {},
+                conversations = emptyList(),
+                selectedConversationId = "",
+                onNewChat = {},
+                onSelectConversation = {},
+                onAttach = {},
+                onRemoveImage = {},
+                onSend = {},
+                onDismissError = {},
+            )
         }
     }
 }

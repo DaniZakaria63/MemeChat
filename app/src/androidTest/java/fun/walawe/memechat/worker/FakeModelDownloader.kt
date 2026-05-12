@@ -2,7 +2,7 @@ package `fun`.walawe.memechat.worker
 
 import android.content.Context
 import `fun`.walawe.modelpull.model.BadRequestException
-import `fun`.walawe.modelpull.model.CachePaligemmaModel
+import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.service.ModelDownloader
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
@@ -10,7 +10,11 @@ import java.util.concurrent.atomic.AtomicReference
 class FakeModelDownloader(
     private val context: Context
 ) : ModelDownloader {
-    override suspend fun getModel(uri: String): Result<CachePaligemmaModel> {
+    override suspend fun getModel(
+        uri: String,
+        onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
+    ): Result<CacheModel> {
+        onProgress(1L, 1L)
         return when (mode.get()) {
             Mode.SUCCESS -> Result.success(createModel("model.tflite"))
             Mode.VALIDATION -> Result.success(createModel(""))
@@ -18,7 +22,7 @@ class FakeModelDownloader(
         }
     }
 
-    private fun createModel(fileName: String): CachePaligemmaModel {
+    private fun createModel(fileName: String): CacheModel {
         val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
         val file = File(modelDir, fileName.ifBlank { "model.tflite" })
         file.parentFile?.mkdirs()
@@ -26,7 +30,7 @@ class FakeModelDownloader(
             file.writeText("fake model data")
         }
 
-        return CachePaligemmaModel(
+        return CacheModel(
             modelId = "fake-id",
             displayName = file.name,
             localFileDir = modelDir.absolutePath,

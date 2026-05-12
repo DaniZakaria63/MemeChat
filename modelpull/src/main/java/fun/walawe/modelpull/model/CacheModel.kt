@@ -6,7 +6,7 @@ import javax.annotation.concurrent.Immutable
 
 @Immutable
 @Serializable
-data class CachePaligemmaModel(
+data class CacheModel(
     val modelId: String = "",
     val displayName: String = "",
     val dimension: Pair<Int, Int> = Pair(256, 256),
