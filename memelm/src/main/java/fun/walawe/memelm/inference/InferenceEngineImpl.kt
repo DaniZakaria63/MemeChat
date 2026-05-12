@@ -22,7 +22,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
-class InferenceEngineImpl private constructor() : InferenceEngine {
+class InferenceEngineImpl private constructor(
+    private val nativeLibDir: String
+) : InferenceEngine {
     companion object {
         private val TAG = InferenceEngineImpl::class.java.simpleName
 
@@ -36,7 +38,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
 
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
-                    InferenceEngineImpl().also { instance = it }
+                    InferenceEngineImpl(nativeLibDir).also { instance = it }
                 } catch (e: UnsatisfiedLinkError) {
                     Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
                     throw e
@@ -54,6 +56,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
     external fun nativeInit(
         modelPath: String,
         mmprojPath: String,
+        backendPath: String,
         contextSize: Int,
         useVulkan: Boolean): Boolean
 
@@ -101,6 +104,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
             check(_state.value is InferenceEngine.State.Initialized) {
                 "Engine not initialized"
             }
+            require(nativeLibDir.isNotBlank()) { "Native library directory is not set" }
             _state.value = InferenceEngine.State.LoadingModel
             Log.i(TAG, "Loading model: $pathToModel")
 
@@ -110,16 +114,22 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
                     require(it.isFile) { "Not a valid file" }
                     require(it.canRead()) { "Cannot read file" }
                 }
+                File(pathToMMProj).let {
+                    require(it.exists()) { "MMProj file not found" }
+                    require(it.isFile) { "MMProj is not a valid file" }
+                    require(it.canRead()) { "Cannot read MMProj file" }
+                }
 
                 nativeInit(
                     modelPath = pathToModel,
                     mmprojPath = pathToMMProj,
+                    backendPath = nativeLibDir,
                     contextSize = params.contextSize.orZero().toInt(),
                     useVulkan = params.useVulkanBackend.orFalse()
                 ).let { result->
                     _state.value = if(result){
                         InferenceEngine.State.ModelReady
-                    } else throw Exception("Model load failed from $TAG")
+                    } else throw Exception("Model load failed from $TAG. model=$pathToModel mmproj=$pathToMMProj")
 
                     Log.i(TAG, "Model loaded and ready")
                 }

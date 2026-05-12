@@ -10,7 +10,7 @@
 
 class LLMInference {
 public:
-    bool init(const char* modelPath, const char* mmprojPath, int contextSize, bool useVulkan);
+    bool init(const char* modelPath, const char* mmprojPath, const char* backendPath, int contextSize, bool useVulkan);
     std::string processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt);
     std::string processTextOnly(const char* prompt);
     std::string getBackendInfo();

@@ -8,8 +8,31 @@
 #include <android/bitmap.h>
 #include <vector>
 #include <cstring>
+#include <fstream>
+#include <sys/stat.h>
 
 using namespace std;
+
+static bool readFileHeader(const char* path, char* out, size_t len);
+static long long getFileSize(const char* path);
+
+static void llamaAndroidLogCallback(ggml_log_level level, const char* text, void* /* user_data */) {
+    if (text == nullptr) return;
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR:
+            LOGE("llama: %s", text);
+            break;
+        case GGML_LOG_LEVEL_WARN:
+            LOGI("llama[warn]: %s", text);
+            break;
+        case GGML_LOG_LEVEL_INFO:
+            LOGI("llama: %s", text);
+            break;
+        default:
+            LOGI("llama: %s", text);
+            break;
+    }
+}
 
 static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
     AndroidBitmapInfo info;
@@ -116,7 +139,24 @@ std::vector<llama_token> LLMInference::tokenize(const string& text, bool add_spe
 // LLMInference implementation
 // ---------------------------------------------------------------------------
 bool LLMInference::init(const char* modelPath, const char* mmprojPath,
-                        int contextSize, bool useVulkan) {
+                        const char* backendPath, int contextSize, bool useVulkan) {
+    LOGI("init: modelPath=%s mmprojPath=%s backendPath=%s contextSize=%d useVulkan=%d",
+         modelPath, mmprojPath, backendPath, contextSize, useVulkan ? 1 : 0);
+    llama_log_set(llamaAndroidLogCallback, nullptr);
+
+    // Backend loading is handled by the ggml build (CPU/Vulkan), so no dynamic load here.
+
+    long long modelSize = getFileSize(modelPath);
+    long long mmprojSize = getFileSize(mmprojPath);
+    LOGI("init: model size=%lld mmproj size=%lld", modelSize, mmprojSize);
+
+    char magic[4] = {0};
+    if (readFileHeader(modelPath, magic, sizeof(magic))) {
+        LOGI("init: model header=%.4s", magic);
+    } else {
+        LOGE("init: failed to read model header");
+    }
+
     llama_backend_init();
     llama_numa_init(GGML_NUMA_STRATEGY_DISABLED);
 
@@ -124,7 +164,16 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = useVulkan ? 99 : 0;
     m_model = llama_model_load_from_file(modelPath, model_params);
-    if (!m_model) return false;
+    if (!m_model) {
+        LOGE("init: llama_model_load_from_file failed, retrying with mmap=0");
+        model_params.use_mmap = false;
+        model_params.use_mlock = false;
+        m_model = llama_model_load_from_file(modelPath, model_params);
+        if (!m_model) {
+            LOGE("init: llama_model_load_from_file failed after retry");
+            return false;
+        }
+    }
 
     // Context
     llama_context_params ctx_params = llama_context_default_params();
@@ -133,7 +182,9 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     ctx_params.n_ubatch = 64;
     m_ctx = llama_init_from_model(m_model, ctx_params);
     if (!m_ctx) {
+        LOGE("init: llama_init_from_model failed");
         llama_model_free(m_model);
+        m_model = nullptr;
         return false;
     }
 
@@ -146,8 +197,11 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     mtmd_params.print_timings = false;
     m_mtmd_ctx = mtmd_init_from_file(mmprojPath, m_model, mtmd_params);
     if (!m_mtmd_ctx) {
+        LOGE("init: mtmd_init_from_file failed");
         llama_free(m_ctx);
         llama_model_free(m_model);
+        m_ctx = nullptr;
+        m_model = nullptr;
         return false;
     }
 
@@ -283,4 +337,27 @@ void LLMInference::release() {
         m_model = nullptr;
     }
     llama_backend_free();
+}
+
+static bool readFileHeader(const char* path, char* out, size_t len) {
+    if (path == nullptr || out == nullptr || len == 0) {
+        return false;
+    }
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+    file.read(out, len);
+    return file.gcount() == static_cast<std::streamsize>(len);
+}
+
+static long long getFileSize(const char* path) {
+    if (path == nullptr || path[0] == '\0') {
+        return -1;
+    }
+    struct stat st {};
+    if (stat(path, &st) != 0) {
+        return -1;
+    }
+    return static_cast<long long>(st.st_size);
 }

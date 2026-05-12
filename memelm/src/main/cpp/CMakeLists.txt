@@ -7,6 +7,7 @@ if(NOT DEFINED LLAMA_DIR)
 endif()
 
 set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan backend" FORCE)
+set(GGML_CPU ON CACHE BOOL "Enable CPU backend" FORCE)
 if(GGML_VULKAN AND ANDROID)
     set(Vulkan_GLSLC_EXECUTABLE "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}/glslc" CACHE FILEPATH "NDK glslc")
     message(STATUS "Using NDK glslc: ${Vulkan_GLSLC_EXECUTABLE}")
@@ -32,11 +33,12 @@ add_library(memelm SHARED
 
 target_include_directories(memelm PRIVATE
         ${LLAMA_DIR}
+        ${LLAMA_DIR}/ggml/include
         ${LLAMA_DIR}/tools/mtmd
-        ${LLAMA_DIR}/tools/mtmd/models        # for models.h and model-specific headers
-        ${LLAMA_DIR}/tools/mtmd/image         # for image preprocessor headers
-        ${LLAMA_DIR}/tools/mtmd/audio         # for audio preprocessor headers
-        ${LLAMA_DIR}/vendor                   # for miniaudio/miniaudio.h and other vendor headers
+        ${LLAMA_DIR}/tools/mtmd/models
+        ${LLAMA_DIR}/tools/mtmd/image
+        ${LLAMA_DIR}/tools/mtmd/audio
+        ${LLAMA_DIR}/vendor
 )
 
 find_library(vulkan-lib vulkan)
