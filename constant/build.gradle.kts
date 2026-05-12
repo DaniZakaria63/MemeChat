@@ -18,6 +18,7 @@ android {
         buildConfigField("String", "MODEL_FILENAME_QWEN", project.properties["FILENAME_QWEN3_VL_EMBEDDING"].toString())
         buildConfigField("String", "MODEL_FILENAME_PALIGEMMA",project.properties["FILENAME_PALIGEMMA_MIX_224"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM",project.properties["FILENAME_MINICPM_V2_Q4_KM"].toString())
+        buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", project.properties["FILENAME_MINICPM_MMPROJ"].toString())
         buildConfigField("String", "BASENAME_QWEN3_VL_MODEL",project.properties["BASENAME_QWEN3_VL_MODEL"].toString())
         buildConfigField("String", "BASENAME_MINICPM_V2_MODEL",project.properties["BASENAME_MINICPM_V2_MODEL"].toString())
 

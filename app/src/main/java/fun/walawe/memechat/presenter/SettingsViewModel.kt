@@ -7,7 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import `fun`.walawe.memechat.data.InferenceRepository
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.SettingsUiState
 import `fun`.walawe.memelm.HardwareAccelerationChecker
@@ -22,7 +21,6 @@ import kotlin.math.roundToInt
 class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val modelRepository: ModelRepository,
-    private val inferenceRepository: InferenceRepository,
     private val accelerationChecker: HardwareAccelerationChecker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -52,7 +50,6 @@ class SettingsViewModel @Inject constructor(
 
     fun clearModelAndCache() {
         modelRepository.clearCache()
-        inferenceRepository.unload()
         refresh()
     }
 

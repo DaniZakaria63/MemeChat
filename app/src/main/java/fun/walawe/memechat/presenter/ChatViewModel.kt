@@ -32,7 +32,6 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
     private val imageDecoder: ImageDecoder,
-    private val modelCache: ModelCache,
     private val inferenceEngine: InferenceEngine,
 ) : BaseViewModel() {
 

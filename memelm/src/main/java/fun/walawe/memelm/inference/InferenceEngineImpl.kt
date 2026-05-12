@@ -51,7 +51,11 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
      */
 
     @FastNative
-    external fun nativeInit(modelPath: String, contextSize: Int, useVulkan: Boolean): Boolean
+    external fun nativeInit(
+        modelPath: String,
+        mmprojPath: String,
+        contextSize: Int,
+        useVulkan: Boolean): Boolean
 
     @FastNative
     external fun nativeSetSystemPrompt(prompt: String)
