@@ -11,13 +11,13 @@ import javax.inject.Singleton
 @Singleton
 class ModelCache @Inject constructor() {
     @Volatile
-    var cachedModel: CachePaligemmaModel? = null
+    var cachedModel: CacheModel? = null
 
-    fun setModel(model: CachePaligemmaModel?) {
+    fun setModel(model: CacheModel?) {
         cachedModel = model
     }
 
-    fun getModel(): CachePaligemmaModel? = cachedModel
+    fun getModel(): CacheModel? = cachedModel
 
     fun clearModel() {
         cachedModel = null

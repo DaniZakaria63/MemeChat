@@ -16,7 +16,7 @@ namespace {
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_fun_walawe_memelm_MemeLM_loadModel(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_loadModel(
         JNIEnv* env, jobject /* thiz */, jstring modelPath, jfloat minP,
         jfloat temperature, jboolean storeChats, jlong contextSize,
         jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock) {
@@ -53,7 +53,7 @@ Java_fun_walawe_memelm_MemeLM_loadModel(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_MemeLM_addChatMessage(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_addChatMessage(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr, jstring message, jstring role) {
     auto * llm = getPtr(modelPtr);
     if (!llm) {
@@ -73,7 +73,7 @@ Java_fun_walawe_memelm_MemeLM_addChatMessage(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_MemeLM_startCompletion(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_startCompletion(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr, jstring prompt) {
     auto * llm = getPtr(modelPtr);
     if (!llm) {
@@ -97,7 +97,7 @@ Java_fun_walawe_memelm_MemeLM_startCompletion(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_fun_walawe_memelm_MemeLM_completionLoop(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_completionLoop(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr) {
     auto * llm = getPtr(modelPtr);
     if (!llm) {
@@ -110,7 +110,7 @@ Java_fun_walawe_memelm_MemeLM_completionLoop(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_MemeLM_close(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_close(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr) {
     auto * llm = getPtr(modelPtr);
     if (!llm) {
@@ -120,7 +120,7 @@ Java_fun_walawe_memelm_MemeLM_close(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_MemeLM_initVision(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_initVision(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr, jstring mmprojPath,
         jstring mediaMarker, jint nThreads, jboolean useGpu, jboolean warmup) {
     auto * llm = getPtr(modelPtr);
@@ -157,7 +157,7 @@ Java_fun_walawe_memelm_MemeLM_initVision(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_MemeLM_startCompletionWithImage(
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_startCompletionWithImage(
         JNIEnv* env, jobject /* thiz */, jlong modelPtr, jstring prompt, jbyteArray imageBytes) {
     auto * llm = getPtr(modelPtr);
     if (!llm) {

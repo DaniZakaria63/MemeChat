@@ -8,9 +8,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
-import dagger.hilt.android.testing.UninstallModules
-import `fun`.walawe.modelpull.NetworkModule
-import `fun`.walawe.modelpull.model.CachePaligemmaModel
+import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -119,12 +117,12 @@ class ModelDownloadWorkerTest {
             .build()
     }
 
-    private fun createCachedModel(): CachePaligemmaModel {
+    private fun createCachedModel(): CacheModel {
         val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
         val file = File(modelDir, "model.tflite")
         file.parentFile?.mkdirs()
         file.writeText("cached model")
-        return CachePaligemmaModel(
+        return CacheModel(
             modelId = "cached-id",
             displayName = file.name,
             localFileDir = modelDir.absolutePath,

@@ -7,9 +7,11 @@
 #include "mtmd-helper.h"
 #include <android/log.h>
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace {
@@ -20,8 +22,9 @@ namespace {
     constexpr int N_THREADS_HEADROOM = 2;
 
     constexpr int DEFAULT_CONTEXT_SIZE = 8192;
+    constexpr int MAX_CONTEXT_SIZE = 4096;
     constexpr int OVERFLOW_HEADROOM = 4;
-    constexpr int BATCH_SIZE = 512;
+    constexpr int BATCH_SIZE = 128;
 
     int resolve_thread_count(int requested) {
         if (requested > 0) {
@@ -60,13 +63,72 @@ namespace {
         }
         return true;
     }
+
+    void llama_log_callback(ggml_log_level level, const char* text, void* /* user_data */) {
+        if (!text) {
+            return;
+        }
+        android_LogPriority prio = ANDROID_LOG_INFO;
+        switch (level) {
+            case GGML_LOG_LEVEL_ERROR:
+                prio = ANDROID_LOG_ERROR;
+                break;
+            case GGML_LOG_LEVEL_WARN:
+                prio = ANDROID_LOG_WARN;
+                break;
+            case GGML_LOG_LEVEL_INFO:
+                prio = ANDROID_LOG_INFO;
+                break;
+            case GGML_LOG_LEVEL_DEBUG:
+                prio = ANDROID_LOG_DEBUG;
+                break;
+            default:
+                prio = ANDROID_LOG_INFO;
+                break;
+        }
+        __android_log_print(prio, LOG_TAG, "%s", text);
+    }
+
+    void log_file_stats(const char* path) {
+        if (!path) {
+            __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "Model path is null");
+            return;
+        }
+        struct stat st = {};
+        if (stat(path, &st) != 0) {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "stat failed for %s errno=%d (%s)",
+                path,
+                errno,
+                strerror(errno)
+            );
+            return;
+        }
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "Model file stats: size=%lld bytes, mode=%o",
+            static_cast<long long>(st.st_size),
+            st.st_mode
+        );
+    }
 }
 
 void LLMInference::loadModel(const char *model_path, float minP, float temperature,
                              bool storeChats, long contextSize, const char *chatTemplate, int nThreads,
                              bool useMmap, bool useMlock) {
 
+    static bool log_set = false;
+    if (!log_set) {
+        llama_log_set(llama_log_callback, nullptr);
+        log_set = true;
+    }
+
     __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "loadModel: %s", model_path ? model_path : "<null>");
+    log_file_stats(model_path);
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "loadModel mmap=%d mlock=%d", useMmap ? 1 : 0, useMlock ? 1 : 0);
 
     // 1. Initialize backends
     ggml_backend_load_all();
@@ -76,19 +138,25 @@ void LLMInference::loadModel(const char *model_path, float minP, float temperatu
     model_params.use_mmap = useMmap;
     model_params.use_mlock = useMlock;
     _model = llama_model_load_from_file(model_path, model_params);
-    if (!_model) throw std::runtime_error("Failed to load model");
+    if (!_model) {
+        throw std::runtime_error("Failed to load model");
+    }
 
     const int requested_ctx = contextSize > 0 ? static_cast<int>(contextSize) : 0;
     const int trained_ctx = llama_model_n_ctx_train(_model);
-    const int ctx_size = requested_ctx > 0 ? requested_ctx : (trained_ctx > 0 ? trained_ctx : DEFAULT_CONTEXT_SIZE);
+    int ctx_size = requested_ctx > 0 ? requested_ctx : (trained_ctx > 0 ? trained_ctx : DEFAULT_CONTEXT_SIZE);
+    if (ctx_size > MAX_CONTEXT_SIZE) {
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "Capping context: requested=%d cap=%d", ctx_size, MAX_CONTEXT_SIZE);
+        ctx_size = MAX_CONTEXT_SIZE;
+    }
 
     const int threads = resolve_thread_count(nThreads);
 
     // 3. Create context
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = static_cast<uint32_t>(ctx_size);
-    ctx_params.n_batch = std::min<uint32_t>(BATCH_SIZE, ctx_params.n_ctx);
-    ctx_params.n_ubatch = ctx_params.n_batch;
+    ctx_params.n_batch = std::max<uint32_t>(1, std::min<uint32_t>(BATCH_SIZE, ctx_params.n_ctx));
+    ctx_params.n_ubatch = std::max<uint32_t>(1, std::min<uint32_t>(ctx_params.n_batch, 128));
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
     _ctx = llama_init_from_model(_model, ctx_params);
@@ -121,19 +189,42 @@ void LLMInference::addChatMessage(const char *message, const char *role) {
     _messages.push_back({strdup(role), strdup(message)});
 }
 
+void LLMInference::clearBatch() {
+    if (_batchInitialized) {
+        llama_batch_free(_batch);
+        _batchInitialized = false;
+    }
+    _batch = {};
+}
+
+void LLMInference::resetBatch(size_t nTokens) {
+    clearBatch();
+    if (nTokens == 0) {
+        return;
+    }
+    _batch = llama_batch_init(static_cast<int32_t>(nTokens), 0, 1);
+    _batchInitialized = true;
+}
+
 bool LLMInference::decodeTokens(const std::vector<llama_token>& tokens, bool logitsLast) {
     const int32_t n_tokens = static_cast<int32_t>(tokens.size());
     if (n_tokens == 0) {
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "decodeTokens: empty token list");
         return true;
     }
 
     const int32_t n_batch = static_cast<int32_t>(llama_n_batch(_ctx));
+    if (n_batch <= 0) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "decodeTokens: invalid n_batch=%d", n_batch);
+        return false;
+    }
     int32_t idx = 0;
     llama_seq_id seq_id = 0;
 
     while (idx < n_tokens) {
         const int32_t n = std::min(n_batch, n_tokens - idx);
         llama_batch batch = llama_batch_init(n, 0, 1);
+        batch.n_tokens = n;
         for (int32_t i = 0; i < n; i++) {
             batch.token[i] = tokens[idx + i];
             batch.pos[i] = _nPast + i;
@@ -164,6 +255,7 @@ void LLMInference::startCompletion(const char *query) {
     }
 
     _response.clear();
+    _cacheResponseTokens.clear();
     _pendingUtf8.clear();
     _promptTokens.clear();
     _formattedMessages.clear();
@@ -177,7 +269,7 @@ void LLMInference::startCompletion(const char *query) {
         _messages.clear();
     }
 
-    _messages.push_back({strdup("user"), strdup(query)});
+    _messages.push_back({strdup("user"), strdup(query ? query : "")});
 
     const char * tmpl = _chatTemplate ? _chatTemplate : "";
     _formattedMessages.resize(llama_n_ctx(_ctx));
@@ -207,23 +299,39 @@ void LLMInference::startCompletion(const char *query) {
             _promptTokens.data(), static_cast<int32_t>(_promptTokens.size()), true, true);
     }
     if (n_tokens <= 0) {
+        __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "Tokenization failed: n_tokens=%d", n_tokens);
         throw std::runtime_error("Tokenization failed");
     }
     _promptTokens.resize(n_tokens);
 
     const int32_t max_tokens = static_cast<int32_t>(llama_n_ctx(_ctx)) - OVERFLOW_HEADROOM;
-    if (n_tokens > max_tokens) {
-        const int32_t skip = n_tokens - max_tokens;
+    if (static_cast<int32_t>(_promptTokens.size()) > max_tokens) {
+        const int32_t skip = static_cast<int32_t>(_promptTokens.size()) - max_tokens;
         _promptTokens.erase(_promptTokens.begin(), _promptTokens.begin() + skip);
-        n_tokens = max_tokens;
     }
 
     llama_memory_clear(llama_get_memory(_ctx), true);
     _nPast = 0;
-    if (!decodeTokens(_promptTokens, true)) {
+
+    resetBatch(_promptTokens.size());
+    if (!_batchInitialized) {
+        throw std::runtime_error("Batch initialization failed");
+    }
+
+    for (size_t i = 0; i < _promptTokens.size(); ++i) {
+        _batch.token[i] = _promptTokens[i];
+        _batch.pos[i] = _nPast + static_cast<llama_pos>(i);
+        _batch.n_seq_id[i] = 1;
+        _batch.seq_id[i] = &_seq_id;
+        _batch.logits[i] = (i == _promptTokens.size() - 1);
+    }
+    _batch.n_tokens = static_cast<int32_t>(_promptTokens.size());
+
+    if (llama_decode(_ctx, _batch) != 0) {
         throw std::runtime_error("Prompt decode failed");
     }
 
+    _nPast += static_cast<llama_pos>(_promptTokens.size());
     _isGenerating = true;
 }
 
@@ -353,9 +461,9 @@ std::string LLMInference::completionLoop() {
         return "[EOG]";
     }
 
-    const llama_token new_token_id = llama_sampler_sample(_sampler, _ctx, -1);
-    llama_sampler_accept(_sampler, new_token_id);
-    if (llama_vocab_is_eog(_vocab, new_token_id)) {
+    _currToken = llama_sampler_sample(_sampler, _ctx, -1);
+    llama_sampler_accept(_sampler, _currToken);
+    if (llama_vocab_is_eog(_vocab, _currToken)) {
         _isGenerating = false;
         if (_storeChats) {
             _messages.push_back({strdup("assistant"), strdup(_response.c_str())});
@@ -363,12 +471,32 @@ std::string LLMInference::completionLoop() {
         return "[EOG]";
     }
 
+    clearBatch();
+    resetBatch(1);
+    if (!_batchInitialized) {
+        _isGenerating = false;
+        return "[EOG]";
+    }
+
+    _batch.token[0] = _currToken;
+    _batch.pos[0] = _nPast;
+    _batch.n_seq_id[0] = 1;
+    _batch.seq_id[0] = &_seq_id;
+    _batch.logits[0] = true;
+    _batch.n_tokens = 1;
+
+    if (llama_decode(_ctx, _batch) != 0) {
+        _isGenerating = false;
+        return "[EOG]";
+    }
+    _nPast += 1;
+
     char stack_buf[256];
-    int32_t n = llama_token_to_piece(_vocab, new_token_id, stack_buf, sizeof(stack_buf), 0, true);
+    int32_t n = llama_token_to_piece(_vocab, _currToken, stack_buf, sizeof(stack_buf), 0, true);
     std::string piece;
     if (n < 0) {
         std::vector<char> heap_buf(static_cast<size_t>(-n));
-        n = llama_token_to_piece(_vocab, new_token_id, heap_buf.data(), static_cast<int32_t>(heap_buf.size()), 0, true);
+        n = llama_token_to_piece(_vocab, _currToken, heap_buf.data(), static_cast<int32_t>(heap_buf.size()), 0, true);
         if (n < 0) {
             _isGenerating = false;
             return "[EOG]";
@@ -386,13 +514,6 @@ std::string LLMInference::completionLoop() {
     std::string ready = _pendingUtf8;
     _pendingUtf8.clear();
     _response += ready;
-
-    std::vector<llama_token> next_token = { new_token_id };
-    if (!decodeTokens(next_token, true)) {
-        _isGenerating = false;
-        return "[EOG]";
-    }
-
     return ready;
 }
 
@@ -402,6 +523,7 @@ void LLMInference::stopCompletion() {
 
 LLMInference::~LLMInference() {
     stopCompletion();
+    clearBatch();
     for (auto & msg : _messages) {
         free(const_cast<char *>(msg.content));
         free(const_cast<char *>(msg.role));
@@ -427,3 +549,4 @@ LLMInference::~LLMInference() {
         _model = nullptr;
     }
 }
+

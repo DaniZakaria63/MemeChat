@@ -74,7 +74,7 @@ interface InferenceEngine {
 
     companion object {
         const val DEFAULT_PREDICT_LENGTH = 1024
-        const val DEFAULT_IMAGE_PROMPT = "describe this meme"
+        const val DEFAULT_IMAGE_PROMPT = "Explain this meme"
     }
 }
 

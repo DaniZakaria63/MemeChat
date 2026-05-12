@@ -57,13 +57,6 @@ data class ChatUiState(
     val error: String? = null,
 )
 
-sealed class ModelState{
-    object Initializing : ModelState()
-    object LoadingModel : ModelState()
-    object ModelReady : ModelState()
-    object Generating : ModelState()
-}
-
 data class SettingsUiState(
     val deviceInfo: List<Pair<String, String>> = emptyList(),
     val backendInfo: List<Pair<String, String>> = emptyList(),

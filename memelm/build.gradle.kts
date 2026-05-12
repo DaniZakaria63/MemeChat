@@ -24,14 +24,17 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        buildConfigField("String", "BASENAME_QWEN3_VL_MODEL",project.properties["BASENAME_QWEN3_VL_MODEL"].toString())
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
 
         externalNativeBuild {
             cmake {
+                cppFlags += listOf()
+                arguments += "-DLLAMA_DIR=${rootProject.projectDir}/../llama.cpp"
+                arguments += "-DGGML_VULKAN=ON"
+
                 arguments += "-DCMAKE_BUILD_TYPE=Release"
                 arguments += "-DCMAKE_MESSAGE_LOG_LEVEL=DEBUG"
                 arguments += "-DCMAKE_VERBOSE_MAKEFILE=ON"
@@ -70,13 +73,10 @@ android {
             version = "3.31.6"
         }
     }
-
-    buildFeatures {
-        buildConfig = true
-    }
 }
 
 dependencies {
+    implementation(project(":constant"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

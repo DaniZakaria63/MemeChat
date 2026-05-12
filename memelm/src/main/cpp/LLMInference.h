@@ -14,16 +14,24 @@ class LLMInference {
     llama_model* _model = nullptr;
     llama_sampler* _sampler = nullptr;
     const llama_vocab* _vocab = nullptr;
-    std::vector<llama_chat_message> _messages;   // Chat history
-    std::vector<char> _formattedMessages;        // Formatted prompt buffer
-    std::vector<llama_token> _promptTokens;      // Tokenized prompt
+
+    llama_token _currToken = LLAMA_TOKEN_NULL;
+    llama_batch _batch = {};
+    bool _batchInitialized = false;
+    llama_seq_id _seq_id = 0;
+
+    std::vector<llama_chat_message> _messages;
+    std::vector<char> _formattedMessages;
+    std::vector<llama_token> _promptTokens;
     std::string _response;
+    std::string _cacheResponseTokens;
     std::string _pendingUtf8;
     bool _storeChats = true;
     bool _isGenerating = false;
     bool _ownsChatTemplate = false;
     const char* _chatTemplate = nullptr;
     llama_pos _nPast = 0;
+    int _nCtxUsed = 0;
 
     struct mtmd_context* _mtmd = nullptr;
     std::string _mediaMarker;
@@ -42,4 +50,6 @@ public:
 
 private:
     bool decodeTokens(const std::vector<llama_token>& tokens, bool logitsLast);
+    void resetBatch(size_t nTokens);
+    void clearBatch();
 };
