@@ -9,12 +9,14 @@ extern "C" {
 JNIEXPORT jboolean
 JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeInit(
-        JNIEnv *env, jobject /* this */,
-        jstring modelPath, jint contextSize, jboolean useVulkan) {
+        JNIEnv* env, jobject /* this */,
+        jstring modelPath, jstring mmprojPath, jint contextSize, jboolean useVulkan) {
 
-    const char *path = env->GetStringUTFChars(modelPath, nullptr);
-    bool ok = g_inference.init(path, contextSize, useVulkan);
-    env->ReleaseStringUTFChars(modelPath, path);
+    const char* model = env->GetStringUTFChars(modelPath, nullptr);
+    const char* mmproj = env->GetStringUTFChars(mmprojPath, nullptr);
+    bool ok = g_inference.init(model, mmproj, contextSize, useVulkan);
+    env->ReleaseStringUTFChars(modelPath, model);
+    env->ReleaseStringUTFChars(mmprojPath, mmproj);
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -49,17 +51,19 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeGetBackendInfo(
     return env->NewStringUTF(g_inference.getBackendInfo().c_str());
 }
 
-JNIEXPORT jvoid JNICALL
+JNIEXPORT jvoid
+JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeRelease(
         JNIEnv * /* env */, jobject /* this */) {
-g_inference . release();
+    g_inference.release();
 }
 
-JNIEXPORT jvoid JNICALL
+JNIEXPORT jvoid
+JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeSetSystemPrompt(
-        JNIEnv* env, jobject /* this */, jstring prompt) {
-const char* str = env->GetStringUTFChars(prompt, nullptr);
-g_inference.setSystemPrompt(str);
-env->ReleaseStringUTFChars(prompt, str);
+        JNIEnv *env, jobject /* this */, jstring prompt) {
+    const char *str = env->GetStringUTFChars(prompt, nullptr);
+    g_inference.setSystemPrompt(str);
+    env->ReleaseStringUTFChars(prompt, str);
 }
 } // extern "C"
