@@ -1,37 +1,125 @@
-cmake_minimum_required(VERSION 3.31.6)
-project("memelm")
+cmake_minimum_required(VERSION 3.22.1)
+project("memelm" VERSION 1.0.0 LANGUAGES C CXX)
 
-# llama.cpp as a sub‑project (with Vulkan ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED TRUE)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
+
 if(NOT DEFINED LLAMA_DIR)
-    message(FATAL_ERROR "LLAMA_DIR is not defined. Pass it via Gradle arguments.")
+    message(FATAL_ERROR "LLAMA_DIR is not defined. Pass it via Gradle like: cmake -DLLAMA_DIR=/path/to/llama.cpp")
 endif()
 
-set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan backend" FORCE)
-if(GGML_VULKAN AND ANDROID)
-    # Android NDK contains glslc under shader-tools/<host_tag>/
-    set(NDK_SHADER_TOOLS "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}")
-    find_program(Vulkan_GLSLC_EXECUTABLE
-            NAMES glslc
-            PATHS "${NDK_SHADER_TOOLS}"
-            NO_DEFAULT_PATH
-            REQUIRED
-    )
-    message(STATUS "Using NDK glslc: ${Vulkan_GLSLC_EXECUTABLE}")
+# Sanity check: make sure the llama directory actually exists
+if(NOT EXISTS "${LLAMA_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "LLAMA_DIR (${LLAMA_DIR}) does not contain a CMakeLists.txt. Check your path.")
 endif()
 
-set(BUILD_TOOLS ON CACHE BOOL "Build mtmd tools library" FORCE)
+# ---------------------------------------------------------------------------
+# Android ABI guard — only arm64-v8a is supported
+# ---------------------------------------------------------------------------
+if(DEFINED ANDROID_ABI)
+    message(STATUS "Detected Android ABI: ${ANDROID_ABI}")
+    if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
+        message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}. Only arm64-v8a is supported.")
+    endif()
+else()
+    message(WARNING "ANDROID_ABI not defined — assuming desktop/CI build.")
+endif()
+
+# ---------------------------------------------------------------------------
+# ggml / llama backend flags
+# ---------------------------------------------------------------------------
+set(GGML_CPU                ON  CACHE BOOL "Enable CPU backend"            FORCE)
+set(GGML_VULKAN             OFF  CACHE BOOL "Enable Vulkan backend"         FORCE)
+set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
+set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
+set(GGML_CPU_KLEIDIAI       ON  CACHE BOOL "KleidiAI NEON kernels"         FORCE)
+set(GGML_OPENMP             ON  CACHE BOOL "OpenMP threading"              FORCE)
+set(LLAMA_BUILD_SHARED      OFF CACHE BOOL "Build llama as static lib"     FORCE)
+set(LLAMA_BUILD_MTMD        OFF CACHE BOOL "Do not build mtmd standalone"  FORCE)
+set(LLAMA_BUILD_COMMON      OFF CACHE BOOL "Skip common library"           FORCE)
+
+# Tell llama's build system NOT to build mtmd as a separate target.
+# We compile the mtmd sources directly into our shared library below,
+# which avoids duplicate symbols and the "-lmtmd not found" linker error.
+set(LLAMA_BUILD_MTMD   OFF CACHE BOOL "Do not build mtmd as a standalone target" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Skip common library" FORCE)
+
+# ---------------------------------------------------------------------------
+# Vulkan glslc path (required when building Vulkan shaders via NDK)
+# ---------------------------------------------------------------------------
+if(GGML_VULKAN AND ANDROID AND DEFINED ANDROID_NDK AND DEFINED ANDROID_HOST_TAG)
+    set(Vulkan_GLSLC_EXECUTABLE
+            "${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}/glslc"
+            CACHE FILEPATH "NDK glslc path" FORCE)
+    message(STATUS "NDK glslc: ${Vulkan_GLSLC_EXECUTABLE}")
+endif()
+
+# ---------------------------------------------------------------------------
+# Build llama.cpp (produces target: llama)
+# ---------------------------------------------------------------------------
 add_subdirectory(${LLAMA_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama_build)
 
-# JNI Libraries
-add_library(memelm SHARED
+# ---------------------------------------------------------------------------
+# Collect mtmd sources (compiled once, into our library)
+# Exclude the CLI entry point and debug utilities — not needed on Android.
+# ---------------------------------------------------------------------------
+file(GLOB_RECURSE MTMD_SOURCES
+        "${LLAMA_DIR}/tools/mtmd/*.cpp"
+        "${LLAMA_DIR}/tools/mtmd/models/*.cpp"
+)
+list(FILTER MTMD_SOURCES EXCLUDE REGEX ".*/mtmd-cli\\.cpp$")
+list(FILTER MTMD_SOURCES EXCLUDE REGEX ".*/mtmd/debug/.*\\.cpp$")
+
+if(NOT MTMD_SOURCES)
+    message(FATAL_ERROR
+            "No mtmd sources found under ${LLAMA_DIR}/tools/mtmd/. "
+            "Check that your llama.cpp submodule is initialised and up to date.")
+endif()
+message(STATUS "mtmd sources: ${MTMD_SOURCES}")
+
+# ---------------------------------------------------------------------------
+# Our JNI shared library
+# ---------------------------------------------------------------------------
+add_library(${CMAKE_PROJECT_NAME} SHARED
         memelm.cpp
-        GGUFReader.cpp
         LLMInference.cpp
+        ${MTMD_SOURCES}
 )
 
-target_include_directories(memelm PRIVATE
-        ${LLAMA_DIR}
-        ${LLAMA_DIR}/examples/llava
+# ---------------------------------------------------------------------------
+# Include directories
+# NOTE: all paths are derived from LLAMA_DIR — no separate LLAMA_SRC needed.
+# ---------------------------------------------------------------------------
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${LLAMA_DIR}                        # llama.h, llama-cpp.h
+        ${LLAMA_DIR}/include                # public llama headers
+        ${LLAMA_DIR}/ggml/include           # ggml.h
+        ${LLAMA_DIR}/ggml/src               # ggml internals (needed by mtmd)
+        ${LLAMA_DIR}/tools/mtmd             # mtmd.h, mtmd-helper.h
+        ${LLAMA_DIR}/tools/mtmd/models      # model-specific vision headers
+        ${LLAMA_DIR}/tools/mtmd/image       # image helpers
+        ${LLAMA_DIR}/tools/mtmd/audio       # audio helpers (Qwen2-Audio etc.)
+        ${LLAMA_DIR}/vendor                 # third-party headers bundled with llama
 )
 
-target_link_libraries(memelm mtmd llama log)
+# ---------------------------------------------------------------------------
+# System libraries
+# ---------------------------------------------------------------------------
+find_library(vulkan-lib    vulkan    REQUIRED)
+find_library(jnigraphics-lib jnigraphics REQUIRED)
+find_library(log-lib       log       REQUIRED)
+find_library(android-lib   android   REQUIRED)
+
+# ---------------------------------------------------------------------------
+# Link order matters: mtmd symbols must resolve against llama, which resolves
+# against ggml. Put most-dependent first, least-dependent last.
+# ---------------------------------------------------------------------------
+target_link_libraries(${CMAKE_PROJECT_NAME}
+        -Wl,--whole-archive llama -Wl,--no-whole-archive
+        ${vulkan-lib}
+        ${jnigraphics-lib}
+        ${android-lib}
+        ${log-lib}
+)

@@ -15,6 +15,6 @@ abstract class WorkerModule {
     @Singleton
     @Binds
     abstract fun bindModelDownloader(
-        kumarModelDownloader: LocalModelDownloader
+        localModelDownloader: LocalModelDownloader
     ): ModelDownloader
 }

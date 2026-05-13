@@ -34,6 +34,7 @@ android {
                 cppFlags += listOf()
                 arguments += "-DLLAMA_DIR=${rootProject.projectDir}/llama.cpp"
                 arguments += "-DGGML_VULKAN=ON"
+                arguments += "-DANDROID_PLATFORM=android-28"
 
                 arguments += "-DCMAKE_BUILD_TYPE=Release"
                 arguments += "-DCMAKE_MESSAGE_LOG_LEVEL=DEBUG"
@@ -65,6 +66,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    packagingOptions {
+        jniLibs{
+            useLegacyPackaging = true
+        }
     }
 
     externalNativeBuild {

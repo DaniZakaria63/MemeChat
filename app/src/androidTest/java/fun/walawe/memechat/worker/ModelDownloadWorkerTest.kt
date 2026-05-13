@@ -8,6 +8,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.runBlocking
@@ -33,7 +34,7 @@ class ModelDownloadWorkerTest {
     fun setUp() {
         hiltRule.inject()
         modelCache = ModelCache()
-        modelCache.clearModel()
+        modelCache.clearModel(CacheKey.Model)
         FakeModelDownloader.setMode(FakeModelDownloader.Mode.SUCCESS)
         deleteModelFile()
     }
@@ -47,7 +48,7 @@ class ModelDownloadWorkerTest {
         assertTrue(result is ListenableWorker.Result.Success)
         val output = (result as ListenableWorker.Result.Success).outputData
         assertEquals("Model downloaded successfully", output.getString("info"))
-        assertNotNull(modelCache.getModel())
+        assertNotNull(modelCache.clearModel(CacheKey.Model))
     }
 
     @Test
@@ -63,7 +64,7 @@ class ModelDownloadWorkerTest {
 
     @Test
     fun testDownloadWarning() = runBlocking {
-        modelCache.setModel(createCachedModel())
+        modelCache.setModel(CacheKey.Model, createCachedModel())
 
         val result = buildWorker().doWork()
 
@@ -92,7 +93,7 @@ class ModelDownloadWorkerTest {
         assertTrue(result is ListenableWorker.Result.Success)
         val modelFile = File(context.getDir("ml_models", Context.MODE_PRIVATE), "model.tflite")
         assertTrue(modelFile.exists())
-        assertNotNull(modelCache.getModel())
+        assertNotNull(modelCache.getModel(CacheKey.Model))
     }
 
     private fun buildWorker(runAttemptCount: Int = 0): ModelDownloadWorker {

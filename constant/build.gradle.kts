@@ -15,7 +15,8 @@ android {
 
         buildConfigField("String", "TAG", "\"WALAWE_MODEL_PULL\"")
         buildConfigField("String", "BASE_URL",project.properties["BASE_URL"].toString())
-        buildConfigField("String", "MODEL_FILENAME_QWEN", project.properties["FILENAME_QWEN3_VL_EMBEDDING"].toString())
+        buildConfigField("String", "MODEL_FILENAME_QWEN", project.properties["FILENAME_QWEN2_VL_2B_Q4_K_M"].toString())
+        buildConfigField("String", "MODEL_FILENAME_QWEN_MMPROJ", project.properties["FILENAME_QWEN2_VL_MMPROJ"].toString())
         buildConfigField("String", "MODEL_FILENAME_PALIGEMMA",project.properties["FILENAME_PALIGEMMA_MIX_224"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM",project.properties["FILENAME_MINICPM_V2_Q4_KM"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", project.properties["FILENAME_MINICPM_MMPROJ"].toString())

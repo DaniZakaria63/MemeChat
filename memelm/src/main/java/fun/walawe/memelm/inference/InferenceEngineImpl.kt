@@ -22,7 +22,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 
-class InferenceEngineImpl private constructor() : InferenceEngine {
+class InferenceEngineImpl private constructor(
+    private val nativeLibDir: String
+) : InferenceEngine {
     companion object {
         private val TAG = InferenceEngineImpl::class.java.simpleName
 
@@ -36,7 +38,12 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
 
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
-                    InferenceEngineImpl().also { instance = it }
+                    Log.i(TAG, "nativeLibDir: $nativeLibDir")
+                    Log.i(TAG, "nativeLibDir exists: ${File(nativeLibDir).exists()}")
+                    File(nativeLibDir).listFiles()?.forEach {
+                        Log.i(TAG, "native lib: ${it.name}")
+                    }
+                    InferenceEngineImpl(nativeLibDir).also { instance = it }
                 } catch (e: UnsatisfiedLinkError) {
                     Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
                     throw e
@@ -50,10 +57,10 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
      * @see memelm.cpp
      */
 
-    @FastNative
     external fun nativeInit(
         modelPath: String,
         mmprojPath: String,
+        backendPath: String,
         contextSize: Int,
         useVulkan: Boolean): Boolean
 
@@ -71,6 +78,9 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
 
     @FastNative
     external fun nativeRelease()
+
+    @FastNative
+    external fun nativeResetContext()
 
     private val _state = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
@@ -96,11 +106,12 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
         }
     }
 
-    override suspend fun loadModel(pathToModel: String, params: InferenceParams) {
+    override suspend fun loadModel(pathToModel: String, pathToMMProj: String, params: InferenceParams) {
         withContext(llamaDispatcher) {
             check(_state.value is InferenceEngine.State.Initialized) {
                 "Engine not initialized"
             }
+            require(nativeLibDir.isNotBlank()) { "Native library directory is not set" }
             _state.value = InferenceEngine.State.LoadingModel
             Log.i(TAG, "Loading model: $pathToModel")
 
@@ -110,15 +121,22 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
                     require(it.isFile) { "Not a valid file" }
                     require(it.canRead()) { "Cannot read file" }
                 }
+                File(pathToMMProj).let {
+                    require(it.exists()) { "MMProj file not found" }
+                    require(it.isFile) { "MMProj is not a valid file" }
+                    require(it.canRead()) { "Cannot read MMProj file" }
+                }
 
                 nativeInit(
                     modelPath = pathToModel,
+                    mmprojPath = pathToMMProj,
+                    backendPath = nativeLibDir,
                     contextSize = params.contextSize.orZero().toInt(),
                     useVulkan = params.useVulkanBackend.orFalse()
                 ).let { result->
                     _state.value = if(result){
                         InferenceEngine.State.ModelReady
-                    } else throw Exception("Model load failed from $TAG")
+                    } else throw Exception("Model load failed from $TAG. model=$pathToModel mmproj=$pathToMMProj")
 
                     Log.i(TAG, "Model loaded and ready")
                 }
@@ -166,6 +184,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
 
         Log.i(TAG, "Processing user prompt")
         _state.value = InferenceEngine.State.Generating
+        nativeResetContext()
         try {
             nativeProcessTextOnly(message).let { result ->
                 if (result.isNotEmpty()) {
@@ -187,6 +206,7 @@ class InferenceEngineImpl private constructor() : InferenceEngine {
         check(message.isNotBlank()) { "User prompt cannot be blank" }
         check(state.value.isModelLoaded) { "Model not ready" }
 
+        nativeResetContext()
         _state.value = InferenceEngine.State.Generating
         Log.i(TAG, "Processing user prompt with image")
         try {

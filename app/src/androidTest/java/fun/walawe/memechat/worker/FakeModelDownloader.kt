@@ -12,11 +12,12 @@ class FakeModelDownloader(
 ) : ModelDownloader {
     override suspend fun getModel(
         uri: String,
+        fileName: String,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
     ): Result<CacheModel> {
         onProgress(1L, 1L)
         return when (mode.get()) {
-            Mode.SUCCESS -> Result.success(createModel("model.tflite"))
+            Mode.SUCCESS -> Result.success(createModel(fileName.ifBlank { "model.tflite" }))
             Mode.VALIDATION -> Result.success(createModel(""))
             Mode.ERROR -> Result.failure(BadRequestException("Failed to download model"))
         }
