@@ -38,6 +38,11 @@ class InferenceEngineImpl private constructor(
 
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
+                    Log.i(TAG, "nativeLibDir: $nativeLibDir")
+                    Log.i(TAG, "nativeLibDir exists: ${File(nativeLibDir).exists()}")
+                    File(nativeLibDir).listFiles()?.forEach {
+                        Log.i(TAG, "native lib: ${it.name}")
+                    }
                     InferenceEngineImpl(nativeLibDir).also { instance = it }
                 } catch (e: UnsatisfiedLinkError) {
                     Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
@@ -52,7 +57,6 @@ class InferenceEngineImpl private constructor(
      * @see memelm.cpp
      */
 
-    @FastNative
     external fun nativeInit(
         modelPath: String,
         mmprojPath: String,

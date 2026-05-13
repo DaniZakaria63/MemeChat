@@ -30,11 +30,15 @@ endif()
 # ---------------------------------------------------------------------------
 # ggml / llama backend flags
 # ---------------------------------------------------------------------------
-set(GGML_CPU        ON  CACHE BOOL "Enable CPU backend"    FORCE)
-set(GGML_VULKAN     ON  CACHE BOOL "Enable Vulkan backend" FORCE)
-set(GGML_BACKEND_DL ON CACHE BOOL "Build backends as dynamic plugins" FORCE)
-set(GGML_CPU_KLEIDIAI ON CACHE BOOL "KleidiAI NEON kernels for arm64" FORCE)
-set(GGML_OPENMP     ON  CACHE BOOL "OpenMP threading"      FORCE)
+set(GGML_CPU                ON  CACHE BOOL "Enable CPU backend"            FORCE)
+set(GGML_VULKAN             ON  CACHE BOOL "Enable Vulkan backend"         FORCE)
+set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
+set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
+set(GGML_CPU_KLEIDIAI       ON  CACHE BOOL "KleidiAI NEON kernels"         FORCE)
+set(GGML_OPENMP             ON  CACHE BOOL "OpenMP threading"              FORCE)
+set(LLAMA_BUILD_SHARED      OFF CACHE BOOL "Build llama as static lib"     FORCE)
+set(LLAMA_BUILD_MTMD        OFF CACHE BOOL "Do not build mtmd standalone"  FORCE)
+set(LLAMA_BUILD_COMMON      OFF CACHE BOOL "Skip common library"           FORCE)
 
 # Tell llama's build system NOT to build mtmd as a separate target.
 # We compile the mtmd sources directly into our shared library below,
@@ -113,7 +117,7 @@ find_library(android-lib   android   REQUIRED)
 # against ggml. Put most-dependent first, least-dependent last.
 # ---------------------------------------------------------------------------
 target_link_libraries(${CMAKE_PROJECT_NAME}
-        llama               # llama + ggml (includes ggml-vulkan when GGML_VULKAN=ON)
+        -Wl,--whole-archive llama -Wl,--no-whole-archive
         ${vulkan-lib}
         ${jnigraphics-lib}
         ${android-lib}

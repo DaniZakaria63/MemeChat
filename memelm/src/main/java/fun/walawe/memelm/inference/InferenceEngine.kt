@@ -75,7 +75,7 @@ data class InferenceParams(
             numThreads = 2,
             useMmap = true,
             useMlock = false,
-            useVulkanBackend = true,
+            useVulkanBackend = false, // Because my poor device prefer CPU rather than GPU, Sad :(
         )
     }
 }

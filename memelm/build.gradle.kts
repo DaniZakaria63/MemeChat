@@ -68,6 +68,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
+    packagingOptions {
+        jniLibs{
+            useLegacyPackaging = true
+        }
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
