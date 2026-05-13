@@ -79,6 +79,9 @@ class InferenceEngineImpl private constructor(
     @FastNative
     external fun nativeRelease()
 
+    @FastNative
+    external fun nativeResetContext()
+
     private val _state = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
 
@@ -181,6 +184,7 @@ class InferenceEngineImpl private constructor(
 
         Log.i(TAG, "Processing user prompt")
         _state.value = InferenceEngine.State.Generating
+        nativeResetContext()
         try {
             nativeProcessTextOnly(message).let { result ->
                 if (result.isNotEmpty()) {
@@ -202,6 +206,7 @@ class InferenceEngineImpl private constructor(
         check(message.isNotBlank()) { "User prompt cannot be blank" }
         check(state.value.isModelLoaded) { "Model not ready" }
 
+        nativeResetContext()
         _state.value = InferenceEngine.State.Generating
         Log.i(TAG, "Processing user prompt with image")
         try {

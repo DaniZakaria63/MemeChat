@@ -80,7 +80,7 @@ class ChatViewModel @Inject constructor(
             isStreaming = true,
         )
 
-        _messages.update {  it + listOf(assistantMessage, userMessage)}
+        _messages.update {  listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
 
         viewModelScope.launch {

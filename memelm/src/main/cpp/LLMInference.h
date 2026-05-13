@@ -3,6 +3,7 @@
 //
 #pragma once
 #include <string>
+#include <vector>
 #include <jni.h>
 #include "llama.h"
 #include "mtmd.h"
@@ -16,6 +17,7 @@ public:
     std::string getBackendInfo();
     void release();
     void setSystemPrompt(const std::string& sysPrompt);
+    void resetContext();
 
 private:
     llama_model*    m_model = nullptr;
@@ -23,11 +25,10 @@ private:
     mtmd_context*   m_mtmd_ctx = nullptr;
     std::string     m_systemPrompt;
     bool            m_gpuUsed = false;
-    // Sampling
+
     llama_sampler*  m_smpl = nullptr;
     const llama_vocab* m_vocab = nullptr;
 
-    // Tokenization helpers
     std::vector<llama_token> tokenize(const std::string& text, bool add_special, bool parse_special);
     std::string generateTokens(int n_past, int max_new_tokens = 512);
 };

@@ -31,7 +31,7 @@ endif()
 # ggml / llama backend flags
 # ---------------------------------------------------------------------------
 set(GGML_CPU                ON  CACHE BOOL "Enable CPU backend"            FORCE)
-set(GGML_VULKAN             ON  CACHE BOOL "Enable Vulkan backend"         FORCE)
+set(GGML_VULKAN             OFF  CACHE BOOL "Enable Vulkan backend"         FORCE)
 set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
 set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
 set(GGML_CPU_KLEIDIAI       ON  CACHE BOOL "KleidiAI NEON kernels"         FORCE)

@@ -173,7 +173,7 @@ fun ChatScreen(
         },
         onRemoveImage = { viewModel.setSelectedImageUri(null) },
         onSend = {
-            if (inputText.isNotBlank() && uiState.isProcessing) {
+            if (inputText.isNotBlank() && !uiState.isProcessing) {
                 val selectedImage = uiState.selectedImageUri
                 if (selectedImage == null) {
                     viewModel.sendMessage(inputText)
