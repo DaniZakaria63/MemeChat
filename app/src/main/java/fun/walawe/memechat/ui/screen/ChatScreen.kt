@@ -3,6 +3,9 @@ package `fun`.walawe.memechat.ui.screen
 import android.content.res.Configuration
 import android.net.Uri
 import android.view.TextureView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -112,13 +115,7 @@ import androidx.media3.datasource.RawResourceDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-
-private data class DummyConversation(
-    val id: String,
-    val title: String,
-    val preview: String,
-    val time: String
-)
+import `fun`.walawe.memechat.presenter.DummyConversation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +123,7 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -134,20 +132,16 @@ fun ChatScreen(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    val conversations = remember {
-        listOf(
-            DummyConversation("c1", "Qwen Chat", "Latest: cat meme", "10:33"),
-            DummyConversation("c2", "Work notes", "Summarize standup", "09:10"),
-            DummyConversation("c3", "Trip planning", "Best places in Seoul", "Yesterday"),
-            DummyConversation("c4", "Ideas", "Brand voice notes", "Yesterday")
-        )
-    }
     var selectedConversationId by remember { mutableStateOf("c1") }
 
-    val context = LocalContext.current
     val placeholderUri = remember {
         "android.resource://${context.packageName}/${R.drawable.placeholder}".toUri()
     }
+
+    val galleryLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
+            viewModel.setSelectedImageUri(it.toString().ifEmpty { placeholderUri.toString() })
+        }
 
     ChatScreenContent(
         uiState = uiState,
@@ -157,7 +151,7 @@ fun ChatScreen(
         drawerState = drawerState,
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
-        conversations = conversations,
+        conversations = viewModel.dummyConversations,
         selectedConversationId = selectedConversationId,
         onNewChat = {
             selectedConversationId = "c1"
@@ -168,11 +162,15 @@ fun ChatScreen(
             // Backend integration point: load conversation
         },
         onAttach = {
-            viewModel.setSelectedImageUri(placeholderUri.toString())
-            // Backend integration point: open image picker
+            galleryLauncher.launch(
+                PickVisualMediaRequest(
+                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                )
+            )
         },
         onRemoveImage = { viewModel.setSelectedImageUri(null) },
         onSend = {
+            // TODO: Clear image state after sent
             if (inputText.isNotBlank() && !uiState.isProcessing) {
                 val selectedImage = uiState.selectedImageUri
                 if (selectedImage == null) {

@@ -13,7 +13,6 @@ import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceParams
 import `fun`.walawe.memelm.inference.isUninterruptible
 import `fun`.walawe.modelpull.model.CacheKey
-import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +48,14 @@ class ChatViewModel @Inject constructor(
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
+
+    val dummyConversations =
+        listOf(
+            DummyConversation("c1", "Qwen Chat", "Latest: cat meme", "10:33"),
+            DummyConversation("c2", "Work notes", "Summarize standup", "09:10"),
+            DummyConversation("c3", "Trip planning", "Best places in Seoul", "Yesterday"),
+            DummyConversation("c4", "Ideas", "Brand voice notes", "Yesterday")
+        )
 
     init {
         safeViewModelScope.launch {
@@ -218,3 +225,10 @@ class ChatViewModel @Inject constructor(
         return formatter.format(System.currentTimeMillis())
     }
 }
+
+data class DummyConversation(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val time: String
+)

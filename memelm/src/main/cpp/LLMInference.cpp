@@ -75,9 +75,6 @@ static constexpr const char* TOK_USER      = "user\n";
 static constexpr const char* TOK_ASSISTANT = "assistant\n";
 
 // Builds the full chat-formatted prompt string.
-// Image placeholder (<__media__>) is intentionally omitted here —
-// mtmd_tokenize handles image token injection automatically when bitmaps
-// are provided. Placing <__media__> in the text string causes double injection.
 static string buildPrompt(const string& systemPrompt, const string& userPrompt) {
     string p;
     if (!systemPrompt.empty()) {
@@ -86,6 +83,26 @@ static string buildPrompt(const string& systemPrompt, const string& userPrompt) 
         p += TOK_IM_END;   p += "\n";
     }
     p += TOK_IM_START; p += TOK_USER;
+    p += userPrompt;
+    p += TOK_IM_END;   p += "\n";
+    p += TOK_IM_START; p += TOK_ASSISTANT;
+    return p;
+}
+
+static string buildImagePrompt(mtmd_context* mtmd_ctx,
+                               const string& systemPrompt,
+                               const string& userPrompt) {
+    const char* marker = mtmd_default_marker();
+
+    string p;
+    if (!systemPrompt.empty()) {
+        p += TOK_IM_START; p += TOK_SYSTEM;
+        p += systemPrompt;
+        p += TOK_IM_END;   p += "\n";
+    }
+    p += TOK_IM_START; p += TOK_USER; p += "\n";
+    p += marker;
+    p += "\n";
     p += userPrompt;
     p += TOK_IM_END;   p += "\n";
     p += TOK_IM_START; p += TOK_ASSISTANT;
@@ -288,7 +305,7 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    const string full_prompt = buildPrompt(m_systemPrompt, prompt);
+    const string full_prompt = buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt);
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();
