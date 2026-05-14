@@ -209,8 +209,10 @@ class InferenceEngineImpl private constructor(
         nativeResetContext()
         _state.value = InferenceEngine.State.Generating
         Log.i(TAG, "Processing user prompt with image")
+
+        val scaledBitmap = prepareImageForModel(bitmap)
         try {
-            nativeProcessImageAndText(bitmap, message).let { result->
+            nativeProcessImageAndText(scaledBitmap, message).let { result->
                 if (result.isNotEmpty()) {
                     emit(result)
                 }
@@ -230,5 +232,20 @@ class InferenceEngineImpl private constructor(
         nativeRelease()
         llamaScope.cancel()
         Log.i(TAG, "Inference engine destroyed")
+    }
+
+    private fun prepareImageForModel(bitmap: Bitmap): Bitmap {
+        val maxDim = 224
+        val w = bitmap.width
+        val h = bitmap.height
+
+        if (w <= maxDim && h <= maxDim) return bitmap
+
+        val scale = maxDim.toFloat() / maxOf(w, h)
+        val newW = (w * scale).toInt()
+        val newH = (h * scale).toInt()
+
+        return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+            .also { Log.i(TAG, "Image scaled: ${w}x${h} → ${newW}x${newH}") }
     }
 }

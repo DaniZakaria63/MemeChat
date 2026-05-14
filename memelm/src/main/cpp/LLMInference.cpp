@@ -41,11 +41,11 @@ static void llamaAndroidLogCallback(ggml_log_level level, const char* text, void
 static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGe("bitmapToRGB: failed to get bitmap info");
+        LOGe("bitmapToRGB: failed to get info");
         return {};
     }
     if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
-        LOGe("bitmapToRGB: only RGBA_8888 is supported, got format %d", info.format);
+        LOGe("bitmapToRGB: unsupported format %d", info.format);
         return {};
     }
     void* pixels = nullptr;
@@ -53,16 +53,26 @@ static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
         LOGe("bitmapToRGB: failed to lock pixels");
         return {};
     }
-    const int w = static_cast<int>(info.width);
-    const int h = static_cast<int>(info.height);
+
+    const int w      = static_cast<int>(info.width);
+    const int h      = static_cast<int>(info.height);
+    const int stride = static_cast<int>(info.stride); // actual bytes per row — NOT always w*4
+
+    LOGi("bitmapToRGB: w=%d h=%d stride=%d (packed would be %d)", w, h, stride, w*4);
+
     std::vector<uint8_t> rgb(w * h * 3);
     const auto* src = static_cast<const uint8_t*>(pixels);
-    for (int i = 0; i < w * h; i++) {
-        rgb[i * 3 + 0] = src[i * 4 + 0]; // R
-        rgb[i * 3 + 1] = src[i * 4 + 1]; // G
-        rgb[i * 3 + 2] = src[i * 4 + 2]; // B
-        // Alpha (i*4+3) is intentionally dropped — mtmd wants RGB only
+
+    // Iterate row by row using actual stride — this is the correct way
+    for (int y = 0; y < h; y++) {
+        const uint8_t* row = src + y * stride; // jump by real stride, not w*4
+        for (int x = 0; x < w; x++) {
+            rgb[(y * w + x) * 3 + 0] = row[x * 4 + 0]; // R
+            rgb[(y * w + x) * 3 + 1] = row[x * 4 + 1]; // G
+            rgb[(y * w + x) * 3 + 2] = row[x * 4 + 2]; // B
+        }
     }
+
     AndroidBitmap_unlockPixels(env, bitmap);
     return rgb;
 }
