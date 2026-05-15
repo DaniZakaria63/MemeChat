@@ -1,7 +1,5 @@
 //
 // Created by dani on 5/6/26.
-// Revised: persistent n_past, context overflow guard, KV cache seq_id fix,
-//          conversation history, safe bitmap handling, sampler reset timing.
 //
 #include <android/log.h>
 #include <android/bitmap.h>
@@ -23,11 +21,10 @@
 
 using namespace std;
 
-// ── Forward declarations ──────────────────────────────────────────────────
+// Forward declarations
 static bool      readFileHeader(const char* path, char* out, size_t len);
 static long long getFileSize(const char* path);
 
-// ── llama.cpp log → Android logcat ───────────────────────────────────────
 static void llamaAndroidLogCallback(ggml_log_level level, const char* text, void* /*user*/) {
     if (!text) return;
     switch (level) {
@@ -37,7 +34,7 @@ static void llamaAndroidLogCallback(ggml_log_level level, const char* text, void
     }
 }
 
-// ── Bitmap → RGB byte vector ──────────────────────────────────────────────
+// Bitmap → RGB byte vector
 static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
     AndroidBitmapInfo info;
     if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
@@ -56,16 +53,15 @@ static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
 
     const int w      = static_cast<int>(info.width);
     const int h      = static_cast<int>(info.height);
-    const int stride = static_cast<int>(info.stride); // actual bytes per row — NOT always w*4
+    const int stride = static_cast<int>(info.stride);
 
     LOGi("bitmapToRGB: w=%d h=%d stride=%d (packed would be %d)", w, h, stride, w*4);
 
     std::vector<uint8_t> rgb(w * h * 3);
     const auto* src = static_cast<const uint8_t*>(pixels);
 
-    // Iterate row by row using actual stride — this is the correct way
     for (int y = 0; y < h; y++) {
-        const uint8_t* row = src + y * stride; // jump by real stride, not w*4
+        const uint8_t* row = src + y * stride;
         for (int x = 0; x < w; x++) {
             rgb[(y * w + x) * 3 + 0] = row[x * 4 + 0]; // R
             rgb[(y * w + x) * 3 + 1] = row[x * 4 + 1]; // G
@@ -77,15 +73,31 @@ static std::vector<uint8_t> bitmapToRGB(JNIEnv* env, jobject bitmap) {
     return rgb;
 }
 
-// ── Qwen2-VL chat template tokens ────────────────────────────────────────
-static constexpr const char* TOK_IM_START  = "<|im_start|>";
-static constexpr const char* TOK_IM_END    = "<|im_end|>";
-static constexpr const char* TOK_SYSTEM    = "system\n";
-static constexpr const char* TOK_USER      = "user\n";
-static constexpr const char* TOK_ASSISTANT = "assistant\n";
+//
+/**
+ *   MiniCPM chat template
+ *   <|im_start|>system
+ *   You are a helpful assistant<|im_end|>
+ *   <|im_start|>user
+ *   Hello<|im_end|>
+ *   <|im_start|>assistant
+ *   Hi there<|im_end|>
+ *   <|im_start|>user
+ *   How are you?<|im_end|>
+ *   <|im_start|>assistant
+ *   <think>
+ */
+
+static constexpr const char* TOK_IM_START   = "<|im_start|>";
+static constexpr const char* TOK_IM_END     = "<|im_end|>";
+static constexpr const char* TOK_SYSTEM     = "system\n";
+static constexpr const char* TOK_USER       = "user\n";
+static constexpr const char* TOK_ASSISTANT  = "assistant\n";
+static constexpr const char* TOK_THINK_START  = "<think>";
+static constexpr const char* TOK_THINK_END = "</think>";
 
 // Builds the full chat-formatted prompt string.
-static string buildPrompt(const string& systemPrompt, const string& userPrompt) {
+std::string LLMInference::buildPrompt(const std::string& systemPrompt, const std::string& userPrompt, bool forReasoning) {
     string p;
     if (!systemPrompt.empty()) {
         p += TOK_IM_START; p += TOK_SYSTEM;
@@ -96,12 +108,14 @@ static string buildPrompt(const string& systemPrompt, const string& userPrompt) 
     p += userPrompt;
     p += TOK_IM_END;   p += "\n";
     p += TOK_IM_START; p += TOK_ASSISTANT;
+    if (forReasoning) p += TOK_THINK_START; p += "\n";
     return p;
 }
 
-static string buildImagePrompt(mtmd_context* mtmd_ctx,
+std::string LLMInference::buildImagePrompt(mtmd_context* mtmd_ctx,
                                const string& systemPrompt,
-                               const string& userPrompt) {
+                               const string& userPrompt,
+                               bool forReasoning) {
     const char* marker = mtmd_default_marker();
 
     string p;
@@ -116,10 +130,11 @@ static string buildImagePrompt(mtmd_context* mtmd_ctx,
     p += userPrompt;
     p += TOK_IM_END;   p += "\n";
     p += TOK_IM_START; p += TOK_ASSISTANT;
+    if (forReasoning) p += TOK_THINK_START;  p += "\n";
     return p;
 }
 
-// ── Context headroom guard ────────────────────────────────────────────────
+// Context headroom guard
 bool LLMInference::hasContextHeadroom(int n_new_tokens) const {
     const int n_ctx  = llama_n_ctx(m_ctx);
     const int used   = static_cast<int>(m_n_past);
@@ -132,15 +147,21 @@ bool LLMInference::hasContextHeadroom(int n_new_tokens) const {
     return true;
 }
 
-// ── Token generation loop ─────────────────────────────────────────────────
+// Token generation loop
 // Reads from current m_n_past position and advances it as tokens are generated.
 // m_n_past is a member — it persists across calls, keeping KV cache in sync.
-string LLMInference::generateTokens(int max_new_tokens) {
+string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb) {
     string response;
     char   piece_buf[256];
     const  int n_ctx = llama_n_ctx(m_ctx);
 
+    m_cancelFlag.store(false, std::memory_order_relaxed);
+
     for (int i = 0; i < max_new_tokens; i++) {
+        if (m_cancelFlag.load(std::memory_order_relaxed)) {
+            LOGi("Generation cancelled by user");
+            break;
+        }
 
         // Context overflow safety — stop generation before KV cache is full
         if (static_cast<int>(m_n_past) >= n_ctx - 4) {
@@ -150,26 +171,33 @@ string LLMInference::generateTokens(int max_new_tokens) {
 
         llama_token new_token = llama_sampler_sample(m_smpl, m_ctx, -1);
 
-        // Qwen2-VL EOG token IDs:
-        // 151645 = <|im_end|>   (primary stop)
-        // 151643 = <|endoftext|>
-        // 151644 = <|im_start|> (safety: should not appear in output)
-        if (new_token == 151645 || new_token == 151643 || new_token == 151644) {
-            LOGi("generateTokens: EOG token %d at step %d", new_token, i);
-            break;
-        }
+        // MiniCPM-V4.6 Token IDs: look @logging.h
         // Generic EOS fallback for any vocab
         if (llama_vocab_is_eog(m_vocab, new_token)) {
             LOGi("generateTokens: vocab EOG at step %d", i);
             break;
         }
-
+        /* if (new_token == 2 || new_token == 73440) break; */
         int n_piece = llama_token_to_piece(m_vocab, new_token, piece_buf, sizeof(piece_buf), 0, true);
         if (n_piece < 0) {
             LOGw("generateTokens: token_to_piece returned %d, skipping", n_piece);
             continue; // skip malformed piece, don't break — model may recover
         }
-        response.append(piece_buf, n_piece);
+        string piece(piece_buf, n_piece);
+        response.append(piece);
+
+        if (cb && cb->obj && cb->onToken) {
+            jstring jpiece = cb->env->NewStringUTF(piece.c_str());
+            cb->env->CallVoidMethod(cb->obj, cb->onToken, jpiece);
+            cb->env->DeleteLocalRef(jpiece);
+
+            // Check if Kotlin threw an exception (e.g. coroutine cancelled)
+            if (cb->env->ExceptionCheck()) {
+                cb->env->ExceptionClear();
+                LOGi("generateTokens: callback exception — stopping generation");
+                break;
+            }
+        }
 
         // Decode the newly generated token into the KV cache at m_n_past position
         llama_batch batch = llama_batch_get_one(&new_token, 1);
@@ -178,7 +206,6 @@ string LLMInference::generateTokens(int max_new_tokens) {
             break;
         }
 
-        // ── THE KEY FIX ──────────────────────────────────────────────────
         // Advance the member-level cursor. This is what keeps the KV cache
         // and n_past in sync across multiple calls to processTextOnly /
         // processImageAndText. If this were a local variable, the next call
@@ -189,10 +216,12 @@ string LLMInference::generateTokens(int max_new_tokens) {
     // Reset sampler state (e.g. repetition penalty history) AFTER generation,
     // not before — resetting before would discard penalties for the current turn
     llama_sampler_reset(m_smpl);
+    m_cancelFlag.store(false, std::memory_order_relaxed);
+
     return response;
 }
 
-// ── Initialization ────────────────────────────────────────────────────────
+// Initialization
 bool LLMInference::init(const char* modelPath, const char* mmprojPath,
                         const char* backendPath, int contextSize, bool useVulkan) {
 
@@ -200,7 +229,7 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     llama_log_set(llamaAndroidLogCallback, nullptr);
     LOGi("init: model=%s ctx=%d vulkan=%d", modelPath, contextSize, useVulkan ? 1 : 0);
 
-    // ── Pre-flight file checks ────────────────────────────────────────────
+    // Pre-flight file checks
     if (getFileSize(modelPath) <= 0) {
         LOGe("init: model file missing or unreadable: %s", modelPath);
         return false;
@@ -220,7 +249,7 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     }
     LOGi("init: pre-flight OK");
 
-    // ── Backend init ──────────────────────────────────────────────────────
+    // Backend init
     // ggml_backend_load_all() activates statically compiled backends (CPU etc.)
     // It does NOT need a path on Android when GGML_BACKEND_DL is OFF (default).
     ggml_backend_load_all();
@@ -228,7 +257,7 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
 
     LOGi("init: backends loaded, registered count = %zu", ggml_backend_reg_count());
 
-    // ── Model load ────────────────────────────────────────────────────────
+    // Model load
     llama_model_params model_params = llama_model_default_params();
     model_params.use_mmap    = true;
     model_params.use_mlock   = false;
@@ -244,13 +273,13 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     }
     LOGi("init: model loaded OK");
 
-    // ── Context init ──────────────────────────────────────────────────────
+    // Context init
     const int n_threads = std::max(2, std::min(4, (int)sysconf(_SC_NPROCESSORS_ONLN) - 2));
     LOGi("init: using %d threads", n_threads);
 
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx           = contextSize;
-    ctx_params.n_batch         = 512;   // larger batch for faster prompt processing
+    ctx_params.n_batch         = 512;
     ctx_params.n_ubatch        = 512;
     ctx_params.n_threads       = n_threads;
     ctx_params.n_threads_batch = n_threads;
@@ -262,10 +291,11 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
         m_model = nullptr;
         return false;
     }
+
     m_vocab   = llama_model_get_vocab(m_model);
     m_n_past  = 0; // explicit reset on fresh init
 
-    // ── Multimodal projector init ─────────────────────────────────────────
+    // Multimodal projector init
     mtmd_context_params mtmd_params = mtmd_context_params_default();
     mtmd_params.use_gpu       = false; // matches model_params.n_gpu_layers = 0
     mtmd_params.n_threads     = n_threads;
@@ -282,7 +312,7 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     }
     LOGi("init: mtmd loaded OK");
 
-    // ── Sampler init ──────────────────────────────────────────────────────
+    // Sampler init
     auto sampler_params       = llama_sampler_chain_default_params();
     sampler_params.no_perf    = true;
     m_smpl                    = llama_sampler_chain_init(sampler_params);
@@ -292,8 +322,8 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     return true;
 }
 
-// ── Image + Text inference ────────────────────────────────────────────────
-std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt) {
+// Image + Text inference
+std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt, const TokenCallback* cb) {
     if (!m_mtmd_ctx || !m_ctx) {
         LOGe("processImageAndText: engine not initialized");
         return "";
@@ -333,8 +363,6 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    // Context overflow check before committing decode
-    // Vision tokens can be large (Qwen2-VL uses ~256 per image)
     if (!hasContextHeadroom(512 /* approx vision + text tokens */)) {
         LOGw("processImageAndText: not enough context — call resetContext() first");
         mtmd_input_chunks_free(chunks);
@@ -351,11 +379,11 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     mtmd_input_chunks_free(chunks);
 
     LOGi("processImageAndText: prompt evaluated, n_past=%d, generating...", (int)m_n_past);
-    return generateTokens(512);
+    return generateTokens(512, cb);
 }
 
-// ── Text-only inference ───────────────────────────────────────────────────
-std::string LLMInference::processTextOnly(const char* prompt) {
+// Text-only inference
+std::string LLMInference::processTextOnly(const char* prompt, const TokenCallback* cb) {
     if (!m_ctx) {
         LOGe("processTextOnly: engine not initialized");
         return "";
@@ -369,7 +397,7 @@ std::string LLMInference::processTextOnly(const char* prompt) {
     input_text.parse_special = true;
 
     mtmd_input_chunks* chunks = mtmd_input_chunks_init();
-    const int          res    = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
+    const int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
     if (res != 0) {
         LOGe("processTextOnly: mtmd_tokenize failed (%d)", res);
         mtmd_input_chunks_free(chunks);
@@ -392,10 +420,10 @@ std::string LLMInference::processTextOnly(const char* prompt) {
     mtmd_input_chunks_free(chunks);
 
     LOGi("processTextOnly: prompt evaluated, n_past=%d, generating...", (int)m_n_past);
-    return generateTokens(512);
+    return generateTokens(512, cb);
 }
 
-// ── Context reset ─────────────────────────────────────────────────────────
+// ── Context reset ─────────────
 void LLMInference::resetContext() {
     if (!m_ctx) {
         LOGw("resetContext: context is null, nothing to reset");
@@ -417,7 +445,7 @@ void LLMInference::resetContext() {
     LOGi("resetContext: KV cache cleared, n_past reset to 0");
 }
 
-// ── Accessors ─────────────────────────────────────────────────────────────
+// ── Accessors
 std::string LLMInference::getBackendInfo() {
     return m_gpuUsed ? "GPU (Vulkan) ON" : "CPU only";
 }
@@ -426,7 +454,16 @@ void LLMInference::setSystemPrompt(const std::string& sysPrompt) {
     m_systemPrompt = sysPrompt;
 }
 
-// ── Cleanup ───────────────────────────────────────────────────────────────
+void LLMInference::cancelGeneration() {
+    m_cancelFlag.store(true, std::memory_order_relaxed);
+    LOGi("Generation cancellation requested");
+}
+
+bool LLMInference::isGenerating() const {
+    return m_cancelFlag.load(std::memory_order_relaxed);
+}
+
+// ── Cleanup ──
 void LLMInference::release() {
     if (m_smpl)     { llama_sampler_free(m_smpl);  m_smpl     = nullptr; }
     if (m_mtmd_ctx) { mtmd_free(m_mtmd_ctx);       m_mtmd_ctx = nullptr; }
@@ -437,7 +474,7 @@ void LLMInference::release() {
     LOGi("release: all resources freed");
 }
 
-// ── File utilities ────────────────────────────────────────────────────────
+// ── File utilities ────────────
 static bool readFileHeader(const char* path, char* out, size_t len) {
     if (!path || !out || len == 0) return false;
     std::ifstream file(path, std::ios::binary);
