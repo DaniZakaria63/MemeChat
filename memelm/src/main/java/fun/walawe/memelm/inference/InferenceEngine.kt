@@ -12,12 +12,13 @@ interface InferenceEngine {
 
     suspend fun setSystemPrompt(systemPrompt: String)
 
-    fun sendUserPrompt(message: String): Flow<String>
+    fun sendUserPrompt(message: String): Flow<Pair<STATE, String>>
 
-    fun sendUserPromptWithImage(bitmap: Bitmap, message: String): Flow<String>
+    fun sendUserPromptWithImage(bitmap: Bitmap, message: String): Flow<Pair<STATE, String>>
 
     suspend fun getBackendInfo(): String
-
+    fun isGenerating(): Boolean
+    fun cancelGeneration()
     fun destroy()
     /**
      * States of the inference engine
@@ -85,4 +86,9 @@ class UnsupportedArchitectureException : Exception()
 interface StreamCallback {
     fun onToken(token: String)
     fun onComplete()
+}
+
+sealed class STATE{
+    object THINKING: STATE()
+    object ANSWER: STATE()
 }

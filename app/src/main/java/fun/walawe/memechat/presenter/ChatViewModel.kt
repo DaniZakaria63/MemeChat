@@ -69,52 +69,7 @@ class ChatViewModel @Inject constructor(
             postError("Model is not ready yet")
             return
         }
-
-        val userMessage = ChatMessage(
-            id = UUID.randomUUID().toString(),
-            role = ChatRole.User,
-            text = message,
-            timestamp = currentTime(),
-            imageUri = null,
-        )
-
-        val assistantId = UUID.randomUUID().toString()
-        val assistantMessage = ChatMessage(
-            id = assistantId,
-            role = ChatRole.Assistant,
-            text = "",
-            timestamp = currentTime(),
-            isStreaming = true,
-        )
-
-        _messages.update {  listOf(assistantMessage, userMessage) + it }
-        _uiState.update { it.copy(isNewConversation = false) }
-
-        viewModelScope.launch {
-            try {
-                inferenceEngine.sendUserPrompt(message).collect { token ->
-                    if (token.isNotEmpty()) {
-                        appendToAssistant(assistantId, token)
-                    }
-                }
-                finishAssistantStream(assistantId)
-            } catch (e: CancellationException) {
-                finishAssistantStream(assistantId)
-                throw e
-            } catch (e: Exception) {
-                finishAssistantStream(assistantId)
-                postError(e.message ?: "Generation failed")
-            }
-        }
-    }
-
-    fun sendImageMessage(message: String, imageUri: String) {
-        if (message.isBlank()) return
-        if (_modelState.value !is InferenceEngine.State.ModelReady) {
-            postError("Model is not ready yet")
-            return
-        }
-
+        val imageUri = _uiState.value.selectedImageUri
         val userMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = ChatRole.User,
@@ -132,26 +87,33 @@ class ChatViewModel @Inject constructor(
             isStreaming = true,
         )
 
-        _messages.update { listOf(assistantMessage, userMessage) + it }
+        _messages.update {  listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
 
         viewModelScope.launch {
             try {
-                val bitmap = withContext(Dispatchers.IO) {
-                    imageDecoder.decode(imageUri.toUri())
-                }
-                inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { token ->
-                    if (token.isNotEmpty()) {
-                        appendToAssistant(assistantId, token)
+                if(_uiState.value.selectedImageUri == null){
+                    inferenceEngine.sendUserPrompt(message).collect { (state, token) ->
+                        if (token.isNotEmpty()) {
+                            appendToAssistant(assistantId, token)
+                        }
+                    }
+                }else{
+                    val bitmap = withContext(Dispatchers.IO) {
+                        imageDecoder.decode(imageUri!!.toUri())
+                    }
+                    inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { (state, token) ->
+                        if (token.isNotEmpty()) {
+                            appendToAssistant(assistantId, token)
+                        }
                     }
                 }
-                finishAssistantStream(assistantId)
             } catch (e: CancellationException) {
-                finishAssistantStream(assistantId)
                 throw e
             } catch (e: Exception) {
+                postError(e.message ?: "Generation failed")
+            } finally {
                 finishAssistantStream(assistantId)
-                postError(e.message ?: "Image generation failed")
             }
         }
     }

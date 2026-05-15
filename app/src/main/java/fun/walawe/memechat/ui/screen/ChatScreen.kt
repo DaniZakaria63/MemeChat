@@ -123,24 +123,17 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
-
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-
     var selectedConversationId by remember { mutableStateOf("c1") }
-
-    val placeholderUri = remember {
-        "android.resource://${context.packageName}/${R.drawable.placeholder}".toUri()
-    }
 
     val galleryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
-            viewModel.setSelectedImageUri(it.toString().ifEmpty { placeholderUri.toString() })
+            viewModel.setSelectedImageUri(it.toString().ifEmpty { null })
         }
 
     ChatScreenContent(
@@ -170,15 +163,10 @@ fun ChatScreen(
         },
         onRemoveImage = { viewModel.setSelectedImageUri(null) },
         onSend = {
-            // TODO: Clear image state after sent
             if (inputText.isNotBlank() && !uiState.isProcessing) {
-                val selectedImage = uiState.selectedImageUri
-                if (selectedImage == null) {
-                    viewModel.sendMessage(inputText)
-                } else {
-                    viewModel.sendImageMessage(inputText, selectedImage)
-                }
+                viewModel.sendMessage(inputText)
                 inputText = ""
+                viewModel.setSelectedImageUri(null)
             }
         },
         onDismissError = viewModel::clearError,
@@ -445,7 +433,7 @@ private fun MessageBubble(message: ChatMessage) {
                             .height(160.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
-                        placeholder = painterResource(id = R.drawable.placeholder)
+                        placeholder = painterResource(id = R.drawable.placeholder),
                     )
                 }
                 Text(text = message.text, style = MaterialTheme.typography.bodyMedium)
