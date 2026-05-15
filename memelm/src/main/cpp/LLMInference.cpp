@@ -147,6 +147,23 @@ bool LLMInference::hasContextHeadroom(int n_new_tokens) const {
     return true;
 }
 
+static bool isCompleteUtf8(const std::string& s) {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(s.data());
+    int i = 0, len = static_cast<int>(s.size());
+    while (i < len) {
+        uint8_t b = bytes[i];
+        int charLen;
+        if      (b < 0x80)         charLen = 1;
+        else if ((b & 0xE0) == 0xC0) charLen = 2;
+        else if ((b & 0xF0) == 0xE0) charLen = 3;
+        else if ((b & 0xF8) == 0xF0) charLen = 4;
+        else return false; // invalid lead byte
+        if (i + charLen > len) return false; // incomplete at end
+        i += charLen;
+    }
+    return true;
+}
+
 // Token generation loop
 // Reads from current m_n_past position and advances it as tokens are generated.
 // m_n_past is a member — it persists across calls, keeping KV cache in sync.
@@ -154,6 +171,7 @@ string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb)
     string response;
     char   piece_buf[256];
     const  int n_ctx = llama_n_ctx(m_ctx);
+    std::string utf8Carry;
 
     m_cancelFlag.store(false, std::memory_order_relaxed);
 
@@ -184,19 +202,21 @@ string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb)
             continue; // skip malformed piece, don't break — model may recover
         }
         string piece(piece_buf, n_piece);
-        response.append(piece);
+        utf8Carry += piece;
 
-        if (cb && cb->obj && cb->onToken) {
-            jstring jpiece = cb->env->NewStringUTF(piece.c_str());
-            cb->env->CallVoidMethod(cb->obj, cb->onToken, jpiece);
-            cb->env->DeleteLocalRef(jpiece);
+        if (isCompleteUtf8(utf8Carry)) {
+            response += utf8Carry;
 
-            // Check if Kotlin threw an exception (e.g. coroutine cancelled)
-            if (cb->env->ExceptionCheck()) {
-                cb->env->ExceptionClear();
-                LOGi("generateTokens: callback exception — stopping generation");
-                break;
+            if (cb && cb->obj && cb->onToken) {
+                jstring jpiece = cb->env->NewStringUTF(utf8Carry.c_str());
+                cb->env->CallVoidMethod(cb->obj, cb->onToken, jpiece);
+                cb->env->DeleteLocalRef(jpiece);
+                if (cb->env->ExceptionCheck()) {
+                    cb->env->ExceptionClear();
+                    break;
+                }
             }
+            utf8Carry.clear();
         }
 
         // Decode the newly generated token into the KV cache at m_n_past position
@@ -211,6 +231,15 @@ string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb)
         // processImageAndText. If this were a local variable, the next call
         // would reset to 0 and corrupt the KV cache state.
         m_n_past++;
+    }
+
+    if (!utf8Carry.empty() && isCompleteUtf8(utf8Carry)) {
+        response += utf8Carry;
+        if (cb && cb->obj && cb->onToken) {
+            jstring jpiece = cb->env->NewStringUTF(utf8Carry.c_str());
+            cb->env->CallVoidMethod(cb->obj, cb->onToken, jpiece);
+            cb->env->DeleteLocalRef(jpiece);
+        }
     }
 
     // Reset sampler state (e.g. repetition penalty history) AFTER generation,
@@ -345,7 +374,7 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    const string full_prompt = buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt);
+    const string full_prompt = buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt, true);
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();
@@ -389,7 +418,7 @@ std::string LLMInference::processTextOnly(const char* prompt, const TokenCallbac
         return "";
     }
 
-    const string full_prompt = buildPrompt(m_systemPrompt, prompt);
+    const string full_prompt = buildPrompt(m_systemPrompt, prompt, true);
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();

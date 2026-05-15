@@ -419,6 +419,23 @@ private fun MessageBubble(message: ChatMessage) {
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if(message.isStreaming){
+                    Row {
+                        LoadingOverlay(
+                            modifier = Modifier
+                                .width(60.dp)
+                                .height(30.dp),
+                            loadingSize = 30
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Let me thinking...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 message.imageUri?.let {
                     val context = LocalContext.current
                     AsyncImage(
@@ -436,7 +453,18 @@ private fun MessageBubble(message: ChatMessage) {
                         placeholder = painterResource(id = R.drawable.placeholder),
                     )
                 }
-                Text(text = message.text, style = MaterialTheme.typography.bodyMedium)
+
+                when{
+                    message.text.isEmpty() && message.reasoning.isNotEmpty() -> {
+                        Text(
+                            text = message.reasoning,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            color = Color.Blue
+                        )
+                    }
+                    else -> Text(text = message.text, style = MaterialTheme.typography.bodyMedium, color = Color.Red)
+                }
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -723,17 +751,18 @@ private fun LoopingWebmSnippet(
 }
 
 @Composable
-private fun LoadingOverlay() {
+private fun LoadingOverlay(
+    modifier: Modifier = Modifier,
+    loadingSize: Int
+) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.3f)),
+        modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
         val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.lottieflow_loading))
         LottieAnimation(
             composition = composition,
-            modifier = Modifier.size(120.dp),
+            modifier = Modifier.size(loadingSize.dp),
             iterations = Int.MAX_VALUE
         )
     }

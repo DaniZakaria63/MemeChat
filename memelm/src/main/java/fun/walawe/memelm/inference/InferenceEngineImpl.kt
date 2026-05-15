@@ -205,26 +205,22 @@ class InferenceEngineImpl private constructor(
             nativeResetContext()
 
             try {
-                var inThinking = false
+                var inThinking = true
                 val callback = object : StreamCallback {
                     override fun onToken(token: String) {
                         when {
-                            token.contains("<think>") -> {
-                                inThinking = true
-                            }
-
-                            token.contains("</think>") -> {
+                            inThinking && token.contains("</think>") -> {
                                 inThinking = false
                             }
 
                             inThinking -> {
-                                trySend(
+                                channel.trySend(
                                     Pair(STATE.THINKING, token)
                                 )
                             }
 
                             else -> {
-                                trySend(
+                                channel.trySend(
                                     Pair(
                                         STATE.ANSWER, token
                                     )
@@ -234,6 +230,7 @@ class InferenceEngineImpl private constructor(
                     }
 
                     override fun onComplete() {
+                        close()
                         Log.i(TAG, "Generation complete")
                     }
                 }
@@ -271,11 +268,11 @@ class InferenceEngineImpl private constructor(
                 val callback = object : StreamCallback {
                     override fun onToken(token: String) {
                         when {
-                            token.contains("<think>") -> {
+                            !inThinking && token.contains("<think>") -> {
                                 inThinking = true
                             }
 
-                            token.contains("</think>") -> {
+                            inThinking && token.contains("</think>") -> {
                                 inThinking = false
                             }
 
@@ -296,6 +293,7 @@ class InferenceEngineImpl private constructor(
                     }
 
                     override fun onComplete() {
+                        close()
                         Log.i(TAG, "Generation complete")
                     }
                 }

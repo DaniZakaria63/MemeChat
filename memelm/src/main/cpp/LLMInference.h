@@ -56,7 +56,7 @@ private:
     bool hasContextHeadroom(int n_new_tokens) const;
 
     // Helper to build prompt (adjusted for MiniCPM-V style + reasoning support)
-    std::string buildPrompt(const std::string& systemPrompt, const std::string& userPrompt, bool forReasoning = false);
+    std::string buildPrompt(const std::string& systemPrompt, const std::string& userPrompt, bool forReasoning = true);
     std::string buildImagePrompt(mtmd_context* mtmd_ctx, const std::string& systemPrompt,
-                                 const std::string& userPrompt, bool forReasoning = false);
+                                 const std::string& userPrompt, bool forReasoning = true);
 };

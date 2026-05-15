@@ -11,6 +11,7 @@ import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
 import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceParams
+import `fun`.walawe.memelm.inference.STATE
 import `fun`.walawe.memelm.inference.isUninterruptible
 import `fun`.walawe.modelpull.model.CacheKey
 import kotlinx.coroutines.CancellationException
@@ -50,12 +51,7 @@ class ChatViewModel @Inject constructor(
     val messages = _messages.asStateFlow()
 
     val dummyConversations =
-        listOf(
-            DummyConversation("c1", "Qwen Chat", "Latest: cat meme", "10:33"),
-            DummyConversation("c2", "Work notes", "Summarize standup", "09:10"),
-            DummyConversation("c3", "Trip planning", "Best places in Seoul", "Yesterday"),
-            DummyConversation("c4", "Ideas", "Brand voice notes", "Yesterday")
-        )
+        listOf<DummyConversation>()
 
     init {
         safeViewModelScope.launch {
@@ -94,8 +90,16 @@ class ChatViewModel @Inject constructor(
             try {
                 if(_uiState.value.selectedImageUri == null){
                     inferenceEngine.sendUserPrompt(message).collect { (state, token) ->
-                        if (token.isNotEmpty()) {
-                            appendToAssistant(assistantId, token)
+                        when(state){
+                            is STATE.THINKING -> {
+                                appendReasoningToAssistant(assistantId, token)
+                            }
+                            is STATE.ANSWER -> {
+                                appendToAssistant(assistantId, token)
+                            }
+                            is STATE.FINISH -> {
+                                finishAssistantStream(assistantId)
+                            }
                         }
                     }
                 }else{
@@ -103,8 +107,16 @@ class ChatViewModel @Inject constructor(
                         imageDecoder.decode(imageUri!!.toUri())
                     }
                     inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { (state, token) ->
-                        if (token.isNotEmpty()) {
-                            appendToAssistant(assistantId, token)
+                        when(state){
+                            is STATE.THINKING -> {
+                                appendReasoningToAssistant(assistantId, token)
+                            }
+                            is STATE.ANSWER -> {
+                                appendToAssistant(assistantId, token)
+                            }
+                            is STATE.FINISH -> {
+                                finishAssistantStream(assistantId)
+                            }
                         }
                     }
                 }
@@ -150,29 +162,21 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun appendToAssistant(messageId: String, token: String) {
+    private fun updateAssistantMessage(messageId: String, transform: (ChatMessage) -> ChatMessage) {
         _messages.update { messages ->
-            messages.map { message ->
-                if (message.id == messageId) {
-                    message.copy(text = message.text + token, isStreaming = true)
-                } else {
-                    message
-                }
-            }
+            val index = messages.indexOfFirst { it.id == messageId }
+            if (index == -1) return@update messages
+            messages.toMutableList().also { it[index] = transform(it[index]) }
         }
     }
+    private fun appendToAssistant(id: String, token: String) =
+        updateAssistantMessage(id) { it.copy(text = it.text + token, isStreaming = true) }
 
-    private fun finishAssistantStream(messageId: String) {
-        _messages.update { messages ->
-            messages.map { message ->
-                if (message.id == messageId) {
-                    message.copy(isStreaming = false)
-                } else {
-                    message
-                }
-            }
-        }
-    }
+    private fun appendReasoningToAssistant(id: String, token: String) =
+        updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
+
+    private fun finishAssistantStream(id: String) =
+        updateAssistantMessage(id) { it.copy(isStreaming = false) }
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }

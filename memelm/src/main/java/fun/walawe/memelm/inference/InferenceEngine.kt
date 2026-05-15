@@ -91,4 +91,5 @@ interface StreamCallback {
 sealed class STATE{
     object THINKING: STATE()
     object ANSWER: STATE()
+    object FINISH: STATE()
 }
