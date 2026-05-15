@@ -2,13 +2,21 @@ package `fun`.walawe.memechat.ui.screen
 
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build.VERSION.SDK_INT
 import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +49,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
@@ -51,6 +60,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +78,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -80,13 +91,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -115,6 +132,10 @@ import androidx.media3.datasource.RawResourceDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import coil.ImageLoader
+import coil.compose.rememberAsyncImagePainter
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import `fun`.walawe.memechat.presenter.DummyConversation
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,11 +150,12 @@ fun ChatScreen(
 
     var inputText by remember { mutableStateOf("") }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    var selectedConversationId by remember { mutableStateOf("c1") }
 
     val galleryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
-            viewModel.setSelectedImageUri(it.toString().ifEmpty { null })
+            it?.let { uri ->
+                viewModel.setSelectedImageUri(uri.toString())
+            }
         }
 
     ChatScreenContent(
@@ -145,15 +167,12 @@ fun ChatScreen(
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
         conversations = viewModel.dummyConversations,
-        selectedConversationId = selectedConversationId,
+        selectedConversationId = "none", // Haven't implemented conversation switching yet
         onNewChat = {
-            selectedConversationId = "c1"
-            // Backend integration point: create new conversation
+            scope.launch { drawerState.close() }
+            viewModel.startNewConversation()
         },
-        onSelectConversation = { id ->
-            selectedConversationId = id
-            // Backend integration point: load conversation
-        },
+        onSelectConversation = {},
         onAttach = {
             galleryLauncher.launch(
                 PickVisualMediaRequest(
@@ -220,22 +239,36 @@ private fun ChatScreenContent(
                 CenterAlignedTopAppBar(
                     modifier = Modifier.fillMaxWidth().shadow(4.dp),
                     windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
-                    title = { Text(text = "MemeLM Chat", style = MaterialTheme.typography.titleMedium) },
+                    title = {
+                        Text(
+                            text = if(uiState.isNewConversation) "New Conversation" else "MemeLM Chat",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onOpenDrawer) {
-                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Open drawer")
+                            Icon(painterResource(R.drawable.ic_menu),
+                                contentDescription = "Open drawer",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
                     },
                     actions = {
                         IconButton(onClick = onNewChat) {
-                            Icon(imageVector = Icons.Outlined.AddComment, contentDescription = "New Chat")
+                            Icon(painterResource(R.drawable.ic_new_chat),
+                                contentDescription = "New Chat",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = MaterialTheme.colorScheme.surfaceBright,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             },
@@ -258,19 +291,12 @@ private fun ChatScreenContent(
 
                 if (showIntroVideo) {
                     LoopingWebmSnippet(
-                        uri = RawResourceDataSource.buildRawResourceUri(R.raw.scuba_cat),
                         modifier = Modifier
                             .align(Alignment.Center)
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
-
-/*
-                if (uiState.isProcessing) {
-                    LoadingOverlay()
-                }
-*/
 
                 if (!uiState.error.isNullOrEmpty()) {
                     TransientErrorDialog(
@@ -391,51 +417,57 @@ private fun MessageList(messages: List<ChatMessage>) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(
+    message: ChatMessage
+) {
     val isUser = message.role == ChatRole.User
     val bubbleShape = if (isUser) {
         RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomEnd = 18.dp, bottomStart = 18.dp)
     } else {
-        RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 18.dp)
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 4.dp)
     }
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.tertiaryContainer
+    }
+    val textColor = if (isUser) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onTertiaryContainer
     }
     val alignment = if (isUser) Alignment.End else Alignment.Start
+    var collapseState by remember { mutableStateOf(true) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
     ) {
+        if(!isUser){
+            CollapsibleReasoningSection(
+                modifier = Modifier.padding(top =8.dp),
+                title = Pair("Let me cook...", "Reasoning Process"),
+                isStreaming = message.isStreaming,
+                content = message.reasoning,
+                isExpanded = collapseState,
+                onToggle = { collapseState = !collapseState }
+            )
+        }
+
+        val modifier = if (isUser) {
+            Modifier.padding(top = 8.dp)
+        } else {
+            Modifier.fillMaxWidth(0.9f).padding(top = 12.dp)
+        }
         Card(
             shape = bubbleShape,
             colors = CardDefaults.cardColors(containerColor = bubbleColor),
             elevation = if (isUser) CardDefaults.cardElevation(0.dp) else CardDefaults.cardElevation(1.dp),
-            modifier = Modifier.fillMaxWidth(0.9f)
+            modifier = modifier
         ) {
             Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.padding(12.dp)
             ) {
-                if(message.isStreaming){
-                    Row {
-                        LoadingOverlay(
-                            modifier = Modifier
-                                .width(60.dp)
-                                .height(30.dp),
-                            loadingSize = 30
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Let me thinking...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
                 message.imageUri?.let {
                     val context = LocalContext.current
                     AsyncImage(
@@ -454,17 +486,13 @@ private fun MessageBubble(message: ChatMessage) {
                     )
                 }
 
-                when{
-                    message.text.isEmpty() && message.reasoning.isNotEmpty() -> {
-                        Text(
-                            text = message.reasoning,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            color = Color.Blue
-                        )
-                    }
-                    else -> Text(text = message.text, style = MaterialTheme.typography.bodyMedium, color = Color.Red)
-                }
+                Text(
+                    text = message.text.trim().ifEmpty { "..." },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
+                    color = textColor,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -486,14 +514,16 @@ private fun InputBar(
     onRemoveImage: () -> Unit,
     onSend: () -> Unit
 ) {
-    Surface(
-        color = Color.White,
-        tonalElevation = 2.dp
+    Card(
+        modifier = Modifier.padding(top = 8.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
+        elevation = CardDefaults.cardElevation(12.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 12.dp, vertical = 12.dp)
         ) {
             if (selectedImageUri != null) {
                 Box(
@@ -523,39 +553,33 @@ private fun InputBar(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceBright,
-                shape = RoundedCornerShape(26.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                BasicTextField(
-                    value = inputText,
-                    onValueChange = onInputChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    textStyle = LocalTextStyle.current.copy(
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
-                    singleLine = false,
-                    maxLines = 4,
-                    decorationBox = { innerTextField ->
-                        if (inputText.isEmpty()) {
-                            Text(
-                                text = "Explain this meme",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                fontSize = 16.sp
-                            )
-                        }
-                        innerTextField()
+
+            BasicTextField(
+                value = inputText,
+                onValueChange = onInputChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                textStyle = LocalTextStyle.current.copy(
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
+                singleLine = false,
+                maxLines = 4,
+                decorationBox = { innerTextField ->
+                    if (inputText.isEmpty()) {
+                        Text(
+                            text = "Explain this meme",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            fontSize = 16.sp
+                        )
                     }
-                )
-            }
+                    innerTextField()
+                }
+            )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
+            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -568,7 +592,7 @@ private fun InputBar(
                     ModelButton(
                         onClick = { },
                         icon = Icons.Filled.AutoAwesome,
-                        text = "QWEN VL",
+                        text = "MiniCPM-V4.6",
                         isHighlight = true
                     )
 
@@ -584,9 +608,7 @@ private fun InputBar(
                     onClick = onSend,
                     containerColor = if (inputText.isNotEmpty()) {
                         MaterialTheme.colorScheme.primaryFixed
-                    } else MaterialTheme.colorScheme.primaryFixed.copy(
-                        alpha = 0.8f
-                    ),
+                    } else MaterialTheme.colorScheme.secondaryFixedDim,
                     modifier = Modifier.size(40.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
@@ -684,30 +706,17 @@ fun ModelButton(
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun LoopingWebmSnippet(
-    uri: Uri,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val renderFactory = remember {
-        DefaultRenderersFactory(context)
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-    }
-    val exoPlayer = remember(uri) {
-        ExoPlayer.Builder(context, renderFactory).build().apply {
-            val mediaItem = MediaItem.fromUri(uri)
-            setMediaItem(mediaItem)
-            repeatMode = Player.REPEAT_MODE_ONE
-            volume = 0f
-            prepare()
-            playWhenReady = true
-        }
-    }
-
-    DisposableEffect(exoPlayer) {
-        onDispose { exoPlayer.release() }
-    }
-
+    val gifEnabledLoader = ImageLoader.Builder(context)
+        .components {
+            if ( SDK_INT >= 28 ) {
+                add(ImageDecoderDecoder.Factory())
+            } else {
+                add(GifDecoder.Factory())
+            }
+        }.build()
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -717,20 +726,12 @@ private fun LoopingWebmSnippet(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(24.dp)
         ) {
-            AndroidView(
+            Image(
                 modifier = Modifier.height(180.dp).width(180.dp).clip(RoundedCornerShape(16.dp)),
-                factory = { ctx ->
-                    /*TextureView(ctx).also { textureView ->
-                        exoPlayer.setVideoTextureView(textureView)
-                    }*/
-
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                }
+                painter = rememberAsyncImagePainter(
+                    ImageRequest.Builder(context).data(data = R.drawable.scubaa).build(), imageLoader = gifEnabledLoader
+                ),
+                contentDescription = "Scuubaaaa",
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
@@ -747,7 +748,6 @@ private fun LoopingWebmSnippet(
             )
         }
     }
-
 }
 
 @Composable
@@ -802,6 +802,97 @@ private fun TransientErrorDialog(
     }
 }
 
+@Composable
+fun CollapsibleReasoningSection(
+    modifier: Modifier = Modifier,
+    isStreaming: Boolean = false,
+    title: Pair<String, String>,
+    content: String,
+    isExpanded: Boolean = true,
+    onToggle: () -> Unit
+) {
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "ChevronRotation"
+    )
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth(fraction = 0.9f)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = LocalIndication.current,
+                onClick = onToggle,
+                role = Role.Button
+            )
+            .semantics { stateDescription = if (isExpanded) "Expand" else "Hide" },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.elevatedCardElevation(1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if(isStreaming) {
+                        LoadingOverlay(
+                            modifier = Modifier
+                                .width(60.dp)
+                                .height(30.dp),
+                            loadingSize = 30
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if(isStreaming) title.first else title.second,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = if (isExpanded) "Collapse $title" else "Expand $title",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .graphicsLayer { rotationZ = chevronRotation }
+                )
+            }
+
+            if (isExpanded) {
+                VerticalDivider(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                Text(
+                    text = content,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = MaterialTheme.typography.bodySmall.fontWeight,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+
 @Preview(showBackground = true)
 @Composable
 private fun ChatScreenPreviewLight() {
@@ -813,7 +904,7 @@ private fun ChatScreenPreviewLight() {
                     ChatMessage(
                         id = "m1",
                         role = ChatRole.User,
-                        text = "Hello Qwen!",
+                        text = "Hello MiniCPM!",
                         timestamp = "10:30",
                     ),
                     ChatMessage(
@@ -866,6 +957,20 @@ private fun ChatScreenPreviewDark() {
                 onSend = {},
                 onDismissError = {},
             )
+        }
+    }
+}
+
+@Preview(name = "Collapsed State", showBackground = true, backgroundColor = 0xFFF8F9FA)
+@Composable
+private fun ReasoningSectionCollapsedPreview() {
+    MaterialTheme {
+        Box(modifier = Modifier.padding(16.dp)) {
+            CollapsibleReasoningSection(
+                title = Pair("Let me cook...", "Reasoning Process"),
+                content = "This is the internal reasoning text that appears when expanded.",
+                isExpanded = false
+            ){}
         }
     }
 }

@@ -81,6 +81,7 @@ dependencies {
     implementation(libs.androidx.google.fonts)
     implementation(libs.google.accompanist.permission)
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
     implementation(libs.lottie.compose)
     implementation(libs.androidx.material3)
 

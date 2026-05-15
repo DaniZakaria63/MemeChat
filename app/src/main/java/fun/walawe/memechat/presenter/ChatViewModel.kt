@@ -59,6 +59,14 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun startNewConversation(){
+        safeViewModelScope.launch {
+            _messages.value = emptyList()
+            _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
+            inferenceEngine.cancelGeneration()
+        }
+    }
+
     fun sendMessage(message: String) {
         if (message.isBlank()) return
         if (_modelState.value !is InferenceEngine.State.ModelReady) {
@@ -79,7 +87,7 @@ class ChatViewModel @Inject constructor(
             id = assistantId,
             role = ChatRole.Assistant,
             text = "",
-            timestamp = currentTime(),
+            timestamp = "",
             isStreaming = true,
         )
 
@@ -131,6 +139,7 @@ class ChatViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        inferenceEngine.cancelGeneration()
         inferenceEngine.destroy()
         super.onCleared()
     }
@@ -176,7 +185,7 @@ class ChatViewModel @Inject constructor(
         updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
 
     private fun finishAssistantStream(id: String) =
-        updateAssistantMessage(id) { it.copy(isStreaming = false) }
+        updateAssistantMessage(id) { it.copy(isStreaming = false, timestamp = currentTime()) }
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }

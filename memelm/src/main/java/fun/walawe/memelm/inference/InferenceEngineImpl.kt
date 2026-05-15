@@ -264,14 +264,10 @@ class InferenceEngineImpl private constructor(
 
             val scaledBitmap = prepareImageForModel(bitmap)
             try {
-                var inThinking = false
+                var inThinking = true
                 val callback = object : StreamCallback {
                     override fun onToken(token: String) {
                         when {
-                            !inThinking && token.contains("<think>") -> {
-                                inThinking = true
-                            }
-
                             inThinking && token.contains("</think>") -> {
                                 inThinking = false
                             }
