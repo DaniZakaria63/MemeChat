@@ -11,9 +11,9 @@ import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
 import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceParams
+import `fun`.walawe.memelm.inference.STATE
 import `fun`.walawe.memelm.inference.isUninterruptible
 import `fun`.walawe.modelpull.model.CacheKey
-import `fun`.walawe.modelpull.model.ModelCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,9 +50,20 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
+    val dummyConversations =
+        listOf<DummyConversation>()
+
     init {
         safeViewModelScope.launch {
             prepareModel()
+        }
+    }
+
+    fun startNewConversation(){
+        safeViewModelScope.launch {
+            _messages.value = emptyList()
+            _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
+            inferenceEngine.cancelGeneration()
         }
     }
 
@@ -62,52 +73,7 @@ class ChatViewModel @Inject constructor(
             postError("Model is not ready yet")
             return
         }
-
-        val userMessage = ChatMessage(
-            id = UUID.randomUUID().toString(),
-            role = ChatRole.User,
-            text = message,
-            timestamp = currentTime(),
-            imageUri = null,
-        )
-
-        val assistantId = UUID.randomUUID().toString()
-        val assistantMessage = ChatMessage(
-            id = assistantId,
-            role = ChatRole.Assistant,
-            text = "",
-            timestamp = currentTime(),
-            isStreaming = true,
-        )
-
-        _messages.update {  listOf(assistantMessage, userMessage) + it }
-        _uiState.update { it.copy(isNewConversation = false) }
-
-        viewModelScope.launch {
-            try {
-                inferenceEngine.sendUserPrompt(message).collect { token ->
-                    if (token.isNotEmpty()) {
-                        appendToAssistant(assistantId, token)
-                    }
-                }
-                finishAssistantStream(assistantId)
-            } catch (e: CancellationException) {
-                finishAssistantStream(assistantId)
-                throw e
-            } catch (e: Exception) {
-                finishAssistantStream(assistantId)
-                postError(e.message ?: "Generation failed")
-            }
-        }
-    }
-
-    fun sendImageMessage(message: String, imageUri: String) {
-        if (message.isBlank()) return
-        if (_modelState.value !is InferenceEngine.State.ModelReady) {
-            postError("Model is not ready yet")
-            return
-        }
-
+        val imageUri = _uiState.value.selectedImageUri
         val userMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = ChatRole.User,
@@ -121,35 +87,59 @@ class ChatViewModel @Inject constructor(
             id = assistantId,
             role = ChatRole.Assistant,
             text = "",
-            timestamp = currentTime(),
+            timestamp = "",
             isStreaming = true,
         )
 
-        _messages.update { listOf(assistantMessage, userMessage) + it }
+        _messages.update {  listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
 
         viewModelScope.launch {
             try {
-                val bitmap = withContext(Dispatchers.IO) {
-                    imageDecoder.decode(imageUri.toUri())
-                }
-                inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { token ->
-                    if (token.isNotEmpty()) {
-                        appendToAssistant(assistantId, token)
+                if(_uiState.value.selectedImageUri == null){
+                    inferenceEngine.sendUserPrompt(message).collect { (state, token) ->
+                        when(state){
+                            is STATE.THINKING -> {
+                                appendReasoningToAssistant(assistantId, token)
+                            }
+                            is STATE.ANSWER -> {
+                                appendToAssistant(assistantId, token)
+                            }
+                            is STATE.FINISH -> {
+                                finishAssistantStream(assistantId)
+                            }
+                        }
+                    }
+                }else{
+                    val bitmap = withContext(Dispatchers.IO) {
+                        imageDecoder.decode(imageUri!!.toUri())
+                    }
+                    inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { (state, token) ->
+                        when(state){
+                            is STATE.THINKING -> {
+                                appendReasoningToAssistant(assistantId, token)
+                            }
+                            is STATE.ANSWER -> {
+                                appendToAssistant(assistantId, token)
+                            }
+                            is STATE.FINISH -> {
+                                finishAssistantStream(assistantId)
+                            }
+                        }
                     }
                 }
-                finishAssistantStream(assistantId)
             } catch (e: CancellationException) {
-                finishAssistantStream(assistantId)
                 throw e
             } catch (e: Exception) {
+                postError(e.message ?: "Generation failed")
+            } finally {
                 finishAssistantStream(assistantId)
-                postError(e.message ?: "Image generation failed")
             }
         }
     }
 
     override fun onCleared() {
+        inferenceEngine.cancelGeneration()
         inferenceEngine.destroy()
         super.onCleared()
     }
@@ -181,29 +171,21 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun appendToAssistant(messageId: String, token: String) {
+    private fun updateAssistantMessage(messageId: String, transform: (ChatMessage) -> ChatMessage) {
         _messages.update { messages ->
-            messages.map { message ->
-                if (message.id == messageId) {
-                    message.copy(text = message.text + token, isStreaming = true)
-                } else {
-                    message
-                }
-            }
+            val index = messages.indexOfFirst { it.id == messageId }
+            if (index == -1) return@update messages
+            messages.toMutableList().also { it[index] = transform(it[index]) }
         }
     }
+    private fun appendToAssistant(id: String, token: String) =
+        updateAssistantMessage(id) { it.copy(text = it.text + token, isStreaming = true) }
 
-    private fun finishAssistantStream(messageId: String) {
-        _messages.update { messages ->
-            messages.map { message ->
-                if (message.id == messageId) {
-                    message.copy(isStreaming = false)
-                } else {
-                    message
-                }
-            }
-        }
-    }
+    private fun appendReasoningToAssistant(id: String, token: String) =
+        updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
+
+    private fun finishAssistantStream(id: String) =
+        updateAssistantMessage(id) { it.copy(isStreaming = false, timestamp = currentTime()) }
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }
@@ -218,3 +200,10 @@ class ChatViewModel @Inject constructor(
         return formatter.format(System.currentTimeMillis())
     }
 }
+
+data class DummyConversation(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val time: String
+)

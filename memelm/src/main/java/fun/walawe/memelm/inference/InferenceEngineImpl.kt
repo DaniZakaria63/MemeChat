@@ -13,9 +13,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
@@ -62,16 +66,17 @@ class InferenceEngineImpl private constructor(
         mmprojPath: String,
         backendPath: String,
         contextSize: Int,
-        useVulkan: Boolean): Boolean
+        useVulkan: Boolean
+    ): Boolean
 
     @FastNative
     external fun nativeSetSystemPrompt(prompt: String)
 
     @FastNative
-    external fun nativeProcessImageAndText(bitmap: Bitmap, prompt: String): String
+    external fun nativeProcessImageAndText(bitmap: Bitmap, prompt: String, tokenCallback: StreamCallback)
 
     @FastNative
-    external fun nativeProcessTextOnly(prompt: String): String
+    external fun nativeProcessTextOnly(prompt: String, tokenCallback: StreamCallback)
 
     @FastNative
     external fun nativeGetBackendInfo(): String
@@ -82,7 +87,15 @@ class InferenceEngineImpl private constructor(
     @FastNative
     external fun nativeResetContext()
 
-    private val _state = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
+    @FastNative
+    external fun nativeCancelGeneration()
+
+    @FastNative
+    external fun nativeIsGenerating(): Boolean
+
+    val channel = Channel<String>(capacity = Channel.UNLIMITED)
+    private val _state =
+        MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -106,7 +119,11 @@ class InferenceEngineImpl private constructor(
         }
     }
 
-    override suspend fun loadModel(pathToModel: String, pathToMMProj: String, params: InferenceParams) {
+    override suspend fun loadModel(
+        pathToModel: String,
+        pathToMMProj: String,
+        params: InferenceParams
+    ) {
         withContext(llamaDispatcher) {
             check(_state.value is InferenceEngine.State.Initialized) {
                 "Engine not initialized"
@@ -133,8 +150,8 @@ class InferenceEngineImpl private constructor(
                     backendPath = nativeLibDir,
                     contextSize = params.contextSize.orZero().toInt(),
                     useVulkan = params.useVulkanBackend.orFalse()
-                ).let { result->
-                    _state.value = if(result){
+                ).let { result ->
+                    _state.value = if (result) {
                         InferenceEngine.State.ModelReady
                     } else throw Exception("Model load failed from $TAG. model=$pathToModel mmproj=$pathToMMProj")
 
@@ -142,7 +159,7 @@ class InferenceEngineImpl private constructor(
                 }
             } catch (e: Exception) {
                 _state.value = InferenceEngine.State.Error(e)
-                Log.e(TAG, e.message.toString(),e)
+                Log.e(TAG, e.message.toString(), e)
                 throw e
             }
         }
@@ -178,57 +195,160 @@ class InferenceEngineImpl private constructor(
             }
         }
 
-    override fun sendUserPrompt(message: String): Flow<String> = flow {
-        require(message.isNotEmpty()) { "User prompt discarded due to being empty!" }
-        check(state.value.isModelLoaded) { "Model not ready" }
+    override fun sendUserPrompt(message: String): Flow<Pair<STATE, String>> =
+        callbackFlow<Pair<STATE, String>> {
+            require(message.isNotEmpty()) { "User prompt discarded due to being empty!" }
+            check(state.value.isModelLoaded) { "Model not ready" }
 
-        Log.i(TAG, "Processing user prompt")
-        _state.value = InferenceEngine.State.Generating
-        nativeResetContext()
-        try {
-            nativeProcessTextOnly(message).let { result ->
-                if (result.isNotEmpty()) {
-                    emit(result)
+            Log.i(TAG, "Processing user prompt")
+            _state.value = InferenceEngine.State.Generating
+            nativeResetContext()
+
+            try {
+                var inThinking = true
+                val callback = object : StreamCallback {
+                    override fun onToken(token: String) {
+                        when {
+                            inThinking && token.contains("</think>") -> {
+                                inThinking = false
+                            }
+
+                            inThinking -> {
+                                channel.trySend(
+                                    Pair(STATE.THINKING, token)
+                                )
+                            }
+
+                            else -> {
+                                channel.trySend(
+                                    Pair(
+                                        STATE.ANSWER, token
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    override fun onComplete() {
+                        close()
+                        Log.i(TAG, "Generation complete")
+                    }
                 }
+                nativeProcessTextOnly(message, callback)
+            } catch (e: CancellationException) {
                 _state.value = InferenceEngine.State.ModelReady
+                close()
+                throw e
+            } catch (e: Exception) {
+                _state.value = InferenceEngine.State.Error(e)
+                close(e)
+                throw e
+            } finally {
+                _state.value = InferenceEngine.State.ModelReady
+                close()
+                awaitClose()
             }
-        } catch (e: CancellationException) {
-            _state.value = InferenceEngine.State.ModelReady
-            throw e
-        } catch (e: Exception) {
-            _state.value = InferenceEngine.State.Error(e)
-            Log.e(TAG, "Generation failed", e)
-            throw e
-        }
-    }.flowOn(llamaDispatcher)
+        }.flowOn(llamaDispatcher)
 
-    override fun sendUserPromptWithImage(bitmap: Bitmap, message: String): Flow<String> = flow {
-        check(message.isNotBlank()) { "User prompt cannot be blank" }
-        check(state.value.isModelLoaded) { "Model not ready" }
+    override fun sendUserPromptWithImage(
+        bitmap: Bitmap,
+        message: String
+    ): Flow<Pair<STATE, String>> =
+        channelFlow<Pair<STATE, String>> {
+            check(message.isNotBlank()) { "User prompt cannot be blank" }
+            check(state.value.isModelLoaded) { "Model not ready" }
 
-        nativeResetContext()
-        _state.value = InferenceEngine.State.Generating
-        Log.i(TAG, "Processing user prompt with image")
-        try {
-            nativeProcessImageAndText(bitmap, message).let { result->
-                if (result.isNotEmpty()) {
-                    emit(result)
+            nativeResetContext()
+            _state.value = InferenceEngine.State.Generating
+            Log.i(TAG, "Processing user prompt with image")
+
+            val scaledBitmap = prepareImageForModel(bitmap)
+            try {
+                var inThinking = true
+                val callback = object : StreamCallback {
+                    override fun onToken(token: String) {
+                        when {
+                            inThinking && token.contains("</think>") -> {
+                                inThinking = false
+                            }
+
+                            inThinking -> {
+                                channel.trySend(
+                                    Pair(STATE.THINKING, token)
+                                )
+                            }
+
+                            else -> {
+                                channel.trySend(
+                                    Pair(
+                                        STATE.ANSWER, token
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    override fun onComplete() {
+                        close()
+                        Log.i(TAG, "Generation complete")
+                    }
                 }
+                nativeProcessImageAndText(scaledBitmap, message, callback)
+            } catch (e: CancellationException) {
                 _state.value = InferenceEngine.State.ModelReady
+                close()
+                throw e
+            } catch (e: Exception) {
+                _state.value = InferenceEngine.State.Error(e)
+                close(e)
+                throw e
+            }finally {
+                _state.value = InferenceEngine.State.ModelReady
+                channel.close()
+                awaitClose()
             }
-        } catch (e: CancellationException) {
-            _state.value = InferenceEngine.State.ModelReady
-            throw e
-        } catch (e: Exception) {
-            _state.value = InferenceEngine.State.Error(e)
-            Log.e(TAG, "Image generation failed", e)
-            throw e
-        }
-    }.flowOn(llamaDispatcher)
+        }.flowOn(llamaDispatcher)
+
+
+    override fun cancelGeneration() {
+        nativeCancelGeneration()
+    }
+
+    override fun isGenerating(): Boolean =
+        nativeIsGenerating()
 
     override fun destroy() {
         nativeRelease()
+        cancelGeneration()
         llamaScope.cancel()
         Log.i(TAG, "Inference engine destroyed")
+    }
+
+    private fun parseReasoningAndResponse(fullOutput: String): Pair<String, String?> {
+        val thinkStart = fullOutput.indexOf("<think>")
+        val thinkEnd = fullOutput.indexOf("</think>")
+
+        return if (thinkStart != -1 && thinkEnd != -1) {
+            val reasoning = fullOutput.substring(thinkStart + 7, thinkEnd).trim()
+            val answer = fullOutput.substring(thinkEnd + 8).trim()
+            answer to reasoning
+        } else {
+            fullOutput to null
+        }
+    }
+
+    private fun prepareImageForModel(bitmap: Bitmap): Bitmap {
+        val maxDim = 224
+        val w = bitmap.width
+        val h = bitmap.height
+
+        if (w <= maxDim && h <= maxDim) return bitmap
+
+        val scale = maxDim.toFloat() / maxOf(w, h)
+        val newW = (w * scale).toInt()
+        val newH = (h * scale).toInt()
+
+        return Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+            .also { Log.i(TAG, "Image scaled: ${w}x${h} → ${newW}x${newH}") }
     }
 }

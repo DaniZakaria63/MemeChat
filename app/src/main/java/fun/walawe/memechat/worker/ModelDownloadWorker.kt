@@ -35,13 +35,13 @@ class ModelDownloadWorker @AssistedInject constructor(
         val targets = listOf(
             DownloadTarget(
                 uri = DEFAULT_MODEL_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_QWEN,
+                fileName = MODEL_FILENAME_MINICPM,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Model
             ),
             DownloadTarget(
                 uri = DEFAULT_MMPROJ_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_QWEN_MMPROJ,
+                fileName = MODEL_FILENAME_MINICPM_MMPROJ,
                 cacheModel = true,
                 keyCacheModel = CacheKey.MMPROJ
             )

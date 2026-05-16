@@ -12,6 +12,7 @@ data class ChatMessage(
     val text: String,
     val timestamp: String,
     val imageUri: String? = null,
+    val reasoning: String = "",
     val isStreaming: Boolean = false,
 )
 
