@@ -22,8 +22,9 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MemeChat"
+rootProject.name = "ZetaAI 3D"
 include(":app")
 include(":memelm")
 include(":modelpull")
 include(":constant")
+include(":bridgelm")
