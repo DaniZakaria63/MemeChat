@@ -3,7 +3,7 @@ package `fun`.walawe.modelpull.service
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
-import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
+import `fun`.walawe.constant.MODEL_FILENAME_QWEN
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheModel
@@ -20,7 +20,7 @@ import kotlin.uuid.Uuid
 interface ModelDownloader {
     suspend fun getModel(
         uri: String,
-        fileName: String = MODEL_FILENAME_MINICPM,
+        fileName: String = MODEL_FILENAME_QWEN,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): Result<CacheModel>
 }
