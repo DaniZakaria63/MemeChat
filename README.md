@@ -1,28 +1,30 @@
-# Memelm
+# My Zeta - 3D AI Assistant
 
-**Memelm** is an Android application that runs the [MiniCPM](https://github.com/OpenBMB/MiniCPM) multimodal language model fully on-device. It leverages [llama.cpp](https://github.com/ggml-org/llama.cpp) under the hood via a JNI bridge, downloads model weights on demand, and wires everything together into a single integrated app — no cloud backend required.
+**My Zeta** is State-of-the-Art author of his career path. This app runs the [MiniCPM](https://github.com/OpenBMB/MiniCPM) multimodal language model fully on-device. It leverages [llama.cpp](https://github.com/ggml-org/llama.cpp) under the hood via a JNI bridge. Downloads model weights on demand, and wires everything together into a single integrated app.
 
 ---
 
 ## Architecture Overview
 
 ```
-memelm-android/
+My Zeta AI/
 ├── app/          # Entry point — integrates all modules into the running application
-├── memelm/       # Core inference engine — MiniCPM via llama.cpp + JNI
-├── modelpull/    # Model downloader — fetches GGUF weights and mmproj via HTTP
+├── bridgelm/     # Core inference engine — MiniCPM via llama.cpp + JNI
+├── modelpull/    # Model downloader — fetches all files dependency via HTTP
+├── stt/          # Speech-to-text module via whisper.cpp
+├── tts/          # Text-to-speech module 
 └── constant/     # Shared configuration — URLs, keys, and build-time constants
+
 ```
 
-The modules are intentionally separated by responsibility. `constant` feeds into both `memelm` and `modelpull`. The `app` module sits at the top of the dependency graph and assembles everything.
+The modules are intentionally separated by responsibility. The `app` module sits at the top of the dependency graph and assembles everything.
 
-<img src="./docs/architecture.png" alt="Architecture Diagram" width="400"/>
 
 ---
 
 ## Modules
 
-### `memelm` — On-Device Inference Engine
+### `BridgeLM` — On-Device Inference Engine
 
 This is the core library module responsible for loading and running the MiniCPM multimodal model entirely on the device.
 

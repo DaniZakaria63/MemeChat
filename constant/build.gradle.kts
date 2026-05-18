@@ -14,9 +14,9 @@ android {
         minSdk = 24
 
         buildConfigField("String", "BASE_URL",project.properties["BASE_URL"].toString())
-        buildConfigField("String", "FILENAME_QWEN2_VL_MODEL", project.properties["FILENAME_QWEN2_VL_MODEL"].toString())
-        buildConfigField("String", "FILENAME_QWEN2_VL_MMPROJ", project.properties["FILENAME_QWEN2_VL_MMPROJ"].toString())
-        buildConfigField("String", "BASENAME_QWEN2_VL_MODEL",project.properties["BASENAME_QWEN2_VL_MODEL"].toString())
+        buildConfigField("String", "FILENAME_QWEN2_VL_MODEL", project.properties["FILENAME_QWEN25_VL_MODEL"].toString())
+        buildConfigField("String", "FILENAME_QWEN2_VL_MMPROJ", project.properties["FILENAME_QWEN25_VL_MMPROJ"].toString())
+        buildConfigField("String", "BASENAME_QWEN2_VL_MODEL",project.properties["BASENAME_QWEN25_VL_MODEL"].toString())
 
         buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", project.properties["DEFAULT_SYSTEM_PROMPT"].toString())
 
