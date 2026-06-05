@@ -1,5 +1,6 @@
 [versions]
 agp = "9.2.1"
+richtext = "1.0.0-alpha04"
 guava = "33.6.0-android"
 kotlin = "2.3.20"
 coreKtx = "1.18.0"
@@ -71,6 +72,8 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
+richtext-commonmark = { group = "com.halilibo.compose-richtext", name = "richtext-commonmark", version.ref = "richtext" }
+richtext-ui-material3 = { group = "com.halilibo.compose-richtext", name = "richtext-ui-material3", version.ref = "richtext" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 coil-gif = { module = "io.coil-kt:coil-gif", version.ref = "coilCompose" }
 lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }

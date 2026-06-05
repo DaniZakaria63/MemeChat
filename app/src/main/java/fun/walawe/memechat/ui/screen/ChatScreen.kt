@@ -65,6 +65,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +80,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,10 +100,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -116,6 +120,9 @@ import coil.request.ImageRequest
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
+import com.halilibo.richtext.commonmark.Markdown
+import com.halilibo.richtext.ui.BasicRichText
+import com.halilibo.richtext.ui.RichTextThemeProvider
 import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
@@ -538,13 +545,21 @@ private fun MessageBubble(
                     )
                 }
 
-                Text(
-                    text = message.text.trim().ifEmpty { "..." },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
-                    color = textColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                if (isUser) {
+                    Text(
+                        text = message.text.trim().ifEmpty { "..." },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                } else {
+                    MarkdownContent(
+                        content = message.text.trim().ifEmpty { "..." },
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -936,18 +951,40 @@ fun CollapsibleReasoningSection(
                 VerticalDivider(
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
-                Text(
-                    text = content,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = MaterialTheme.typography.bodySmall.fontWeight,
+                MarkdownContent(
+                    content = content,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 4.dp),
+                    fontSize = MaterialTheme.typography.bodySmall.fontSize,
                 )
             }
         }
     }
 }
 
+
+@Composable
+private fun MarkdownContent(
+    content: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = MaterialTheme.typography.bodyMedium.fontSize,
+) {
+    RichTextThemeProvider(
+        textStyleProvider = { TextStyle(color = color, fontSize = fontSize) },
+        contentColorProvider = { color },
+        textStyleBackProvider = { newStyle, children ->
+            CompositionLocalProvider(LocalTextStyle provides newStyle) { children() }
+        },
+        contentColorBackProvider = { newColor, children ->
+            CompositionLocalProvider(LocalContentColor provides newColor) { children() }
+        },
+    ) {
+        BasicRichText(modifier = modifier) {
+            Markdown(content = content)
+        }
+    }
+}
 
 @Preview(showBackground = true)
 @Composable

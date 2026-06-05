@@ -79,6 +79,9 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
 
+    implementation(libs.richtext.commonmark)
+    implementation(libs.richtext.ui.material3)
+
     implementation(libs.androidx.google.fonts)
     implementation(libs.google.accompanist.permission)
     implementation(libs.coil.compose)
