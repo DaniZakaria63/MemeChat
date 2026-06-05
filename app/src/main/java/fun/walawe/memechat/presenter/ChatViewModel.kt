@@ -1,5 +1,6 @@
 package `fun`.walawe.memechat.presenter
 
+import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -11,10 +12,12 @@ import `fun`.walawe.local.data.MessageEntity
 import `fun`.walawe.local.service.MemoryService
 import `fun`.walawe.memechat.data.ChatMLBuilder
 import `fun`.walawe.memechat.data.ImageDecoder
+import `fun`.walawe.memechat.data.ImageStore
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
+import `fun`.walawe.memechat.model.ConversationHistory
 import `fun`.walawe.memelm.inference.InferenceEngine
 import `fun`.walawe.memelm.inference.InferenceParams
 import `fun`.walawe.memelm.inference.STATE
@@ -31,6 +34,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,6 +49,7 @@ class ChatViewModel @Inject constructor(
     private val memoryService: MemoryService,
     private val messageDao: MessageDao,
     private val conversationDao: ConversationDao,
+    private val imageStore: ImageStore,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.UnloadingModel).also { flow ->
@@ -61,10 +66,10 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
-    val conversations: StateFlow<List<DummyConversation>> =
+    val conversations: StateFlow<List<ConversationHistory>> =
         conversationDao.getAllConversations().map { entities ->
             entities.map { entity ->
-                DummyConversation(
+                ConversationHistory(
                     id = entity.id,
                     title = entity.title,
                     preview = entity.preview,
@@ -81,6 +86,10 @@ class ChatViewModel @Inject constructor(
     init {
         safeViewModelScope.launch {
             prepareModel()
+            runCatching {
+                val validIds = conversationDao.getAllConversationIds().toSet()
+                imageStore.sweepOrphans(validIds)
+            }
         }
     }
 
@@ -102,6 +111,7 @@ class ChatViewModel @Inject constructor(
             isKvCachePopulated = false
             _uiState.update { it.copy(isNewConversation = false) }
             _messages.value = messageDao.getMessages(conversationId).reversed().map { entity ->
+                val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
                     id = entity.id,
                     role = when (entity.role) {
@@ -111,9 +121,19 @@ class ChatViewModel @Inject constructor(
                     },
                     text = entity.text,
                     timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(entity.timestamp)),
-                    imageUri = entity.imageUri,
+                    imageUri = safeImage,
                     reasoning = entity.reasoning,
                 )
+            }
+        }
+    }
+
+    fun deleteConversation(conversationId: String) {
+        safeViewModelScope.launch {
+            conversationDao.delete(conversationId)
+            imageStore.deleteConversationFolder(conversationId)
+            if (_currentConversationId.value == conversationId) {
+                startNewConversation()
             }
         }
     }
@@ -125,7 +145,7 @@ class ChatViewModel @Inject constructor(
             return
         }
 
-        val imageUri = _uiState.value.selectedImageUri
+        val transientImageUri = _uiState.value.selectedImageUri
         val forReasoning = _uiState.value.isThinkingEnabled
         val isNewConversation = _currentConversationId.value == null
         val conversationId = _currentConversationId.value ?: createNewConversation()
@@ -135,14 +155,26 @@ class ChatViewModel @Inject constructor(
             val userMsgId = UUID.randomUUID().toString()
             val assistantId = UUID.randomUUID().toString()
 
+            val persistedImagePath: String? = transientImageUri?.let { uriString ->
+                imageStore.copyToInternal(
+                    src = uriString.toUri(),
+                    conversationId = conversationId,
+                    messageId = userMsgId,
+                )
+            }
+            if (transientImageUri != null && persistedImagePath == null) {
+                postError("Failed to attach image")
+                return@launch
+            }
+
             messageDao.insert(MessageEntity(
                 id = userMsgId, conversationId = conversationId,
                 role = "User", text = message, reasoning = "",
-                timestamp = System.currentTimeMillis(), imageUri = imageUri,
+                timestamp = System.currentTimeMillis(), imageUri = persistedImagePath,
             ))
 
             val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
-                text = message, timestamp = currentTime(), imageUri = imageUri)
+                text = message, timestamp = currentTime(), imageUri = persistedImagePath)
             val assistantMessage = ChatMessage(id = assistantId, role = ChatRole.Assistant,
                 text = "", timestamp = "", isStreaming = true)
 
@@ -151,7 +183,9 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(isNewConversation = false) }
 
             var responseText = ""
-            val imageBitmap = imageUri?.let { withContext(Dispatchers.IO) { imageDecoder.decode(it.toUri()) } }
+            val imageBitmap = persistedImagePath?.let { path ->
+                withContext(Dispatchers.IO) { imageDecoder.decode(Uri.fromFile(File(path))) }
+            }
 
             val resetFirst = !isKvCachePopulated
             val chatML = when {
@@ -264,10 +298,3 @@ class ChatViewModel @Inject constructor(
         return formatter.format(System.currentTimeMillis())
     }
 }
-
-data class DummyConversation(
-    val id: String,
-    val title: String,
-    val preview: String,
-    val time: String
-)

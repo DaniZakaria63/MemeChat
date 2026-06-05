@@ -14,8 +14,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +61,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -78,6 +81,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
@@ -123,6 +127,7 @@ import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
+import `fun`.walawe.memechat.model.ConversationHistory
 import `fun`.walawe.memechat.presenter.ChatViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -138,7 +143,6 @@ import coil.ImageLoader
 import coil.compose.rememberAsyncImagePainter
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
-import `fun`.walawe.memechat.presenter.DummyConversation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,6 +184,9 @@ fun ChatScreen(
             scope.launch { drawerState.close() }
             viewModel.loadConversation(id)
         },
+        onDeleteConversation = { id ->
+            viewModel.deleteConversation(id)
+        },
         onAttach = {
             galleryLauncher.launch(
                 PickVisualMediaRequest(
@@ -210,10 +217,11 @@ private fun ChatScreenContent(
     drawerState: DrawerState,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
-    conversations: List<DummyConversation>,
+    conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
+    onDeleteConversation: (String) -> Unit,
     onAttach: () -> Unit,
     onRemoveImage: () -> Unit,
     onSend: () -> Unit,
@@ -233,6 +241,7 @@ private fun ChatScreenContent(
                     selectedConversationId = selectedConversationId,
                     onNewChat = onNewChat,
                     onSelectConversation = onSelectConversation,
+                    onDeleteConversation = onDeleteConversation,
                     onOpenSettings = onOpenSettings
                 )
             }
@@ -318,10 +327,11 @@ private fun ChatScreenContent(
 
 @Composable
 private fun DrawerContent(
-    conversations: List<DummyConversation>,
+    conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
+    onDeleteConversation: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Box(
@@ -359,36 +369,12 @@ private fun DrawerContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(conversations) { convo ->
-                    val selected = convo.id == selectedConversationId
-                    val containerColor = if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    }
-                    Column(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(containerColor)
-                            .clickable { onSelectConversation(convo.id) }
-                            .padding(12.dp)
-                            .fillMaxWidth()
-                    ) {
-                        Text(text = convo.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = convo.preview,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = convo.time,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    ConversationRow(
+                        conversation = convo,
+                        isSelected = convo.id == selectedConversationId,
+                        onClick = { onSelectConversation(convo.id) },
+                        onDelete = { onDeleteConversation(convo.id) },
+                    )
                 }
             }
         }
@@ -402,6 +388,66 @@ private fun DrawerContent(
             HorizontalDivider()
             SettingsDrawerItem(onClick = onOpenSettings)
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ConversationRow(
+    conversation: ConversationHistory,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(containerColor)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showConfirm = true },
+            )
+            .padding(12.dp)
+            .fillMaxWidth()
+    ) {
+        Text(text = conversation.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = conversation.preview,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = conversation.time,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("Delete conversation?") },
+            text = { Text("This will permanently remove the conversation and its images.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirm = false
+                    onDelete()
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -930,6 +976,7 @@ private fun ChatScreenPreviewLight() {
                 selectedConversationId = "",
                 onNewChat = {},
                 onSelectConversation = {},
+                onDeleteConversation = {},
                 onAttach = {},
                 onRemoveImage = {},
                 onSend = {},
@@ -959,6 +1006,7 @@ private fun ChatScreenPreviewDark() {
                 selectedConversationId = "",
                 onNewChat = {},
                 onSelectConversation = {},
+                onDeleteConversation = {},
                 onAttach = {},
                 onRemoveImage = {},
                 onSend = {},

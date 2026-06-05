@@ -811,17 +811,17 @@ fun loadConversation(conversationId: String) {
 ### 4.7 Wire conversation list drawer
 
 ```kotlin
-val conversations: StateFlow<List<DummyConversation>> =
-    conversationDao.getAllConversations().map { entities ->
-        entities.map { entity ->
-            DummyConversation(
-                id = entity.id,
-                title = entity.title,
-                preview = entity.preview,
-                time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(entity.updatedAt)),
-            )
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val conversations: StateFlow<List<ConversationHistory>> =
+        conversationDao.getAllConversations().map { entities ->
+            entities.map { entity ->
+                ConversationHistory(
+                    id = entity.id,
+                    title = entity.title,
+                    preview = entity.preview,
+                    time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(entity.updatedAt)),
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 ```
 
 Update `ChatScreen` to wire `viewModel.conversations` instead of `dummyConversations`.
@@ -937,6 +937,235 @@ User types "tell me more"  (thinking=ON)
 
 ---
 
+## Phase 6: Image Persistence (`:app`)
+
+### Problem
+
+`selectedImageUri` in `ChatUiState` is a transient `content://` URI from the gallery picker. This breaks in three ways:
+1. **Gallery removal between pick and send** → `ImageDecoder.decode` throws, `loadConversation` shows broken image
+2. **Process restart after conversation load** → URI permission is revoked, `AsyncImage` cannot load it
+3. **No cleanup on conversation delete** → orphaned images leak
+
+### Solution: folder-per-conversation image store
+
+Copy picked images into `context.filesDir/images/<conversationId>/<messageId>.webp` (224px, lossy WebP — matches the `prepareImageForModel` resize in `InferenceEngineImpl.kt`). Files are private, stable across restarts, deterministic, and trivial to clean up per-conversation via `deleteRecursively()`.
+
+### 6.1 New: `ImageStore` (`:app`)
+
+```kotlin
+@Singleton
+class ImageStore @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
+    companion object {
+        const val MAX_DIM = 224
+        const val WEBP_QUALITY = 80
+        const val IMAGES_DIR = "images"
+    }
+
+    private val root: File = File(context.filesDir, IMAGES_DIR).apply { mkdirs() }
+
+    fun folderFor(conversationId: String): File =
+        File(root, conversationId).apply { mkdirs() }
+
+    suspend fun copyToInternal(src: Uri, conversationId: String, messageId: String): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val original = context.contentResolver.openInputStream(src)?.use {
+                    BitmapFactory.decodeStream(it)
+                } ?: return@runCatching null
+
+                val resized = resize(original, MAX_DIM)
+                if (resized !== original) original.recycle()
+
+                val out = File(folderFor(conversationId), "$messageId.webp")
+                FileOutputStream(out).use { fos ->
+                    resized.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, fos)
+                }
+                resized.recycle()
+                out.absolutePath
+            }.getOrNull()
+        }
+
+    fun deleteConversationFolder(conversationId: String): Boolean =
+        File(root, conversationId).deleteRecursively()
+
+    fun delete(path: String?): Int { /* single-file delete */ }
+
+    fun deleteAll(): Boolean = root.deleteRecursively()
+
+    suspend fun sweepOrphans(validConversationIds: Set<String>) = withContext(Dispatchers.IO) {
+        val folders = root.listFiles() ?: return@withContext
+        for (folder in folders) {
+            if (folder.isDirectory && folder.name !in validConversationIds) {
+                folder.deleteRecursively()
+            }
+        }
+    }
+
+    private fun resize(bitmap: Bitmap, maxDim: Int): Bitmap { /* longest-edge scale */ }
+}
+```
+
+### 6.2 `ConversationDao` — add IDs query for orphan sweep
+
+```kotlin
+@Query("SELECT id FROM conversations")
+suspend fun getAllConversationIds(): List<String>
+```
+
+### 6.3 `ChatViewModel` — copy on send, defensive load, delete, sweep
+
+**Constructor — add `ImageStore`:**
+```kotlin
+class ChatViewModel @Inject constructor(
+    // ... existing ...
+    private val imageStore: ImageStore,
+) : BaseViewModel()
+```
+
+**`init` — run orphan sweep after model prep:**
+```kotlin
+init {
+    safeViewModelScope.launch {
+        prepareModel()
+        runCatching {
+            val validIds = conversationDao.getAllConversationIds().toSet()
+            imageStore.sweepOrphans(validIds)
+        }
+    }
+}
+```
+
+**`sendMessage` — copy transient URI on send:**
+```kotlin
+val transientImageUri = _uiState.value.selectedImageUri
+val forReasoning = _uiState.value.isThinkingEnabled
+val isNewConversation = _currentConversationId.value == null
+val conversationId = _currentConversationId.value ?: createNewConversation()
+
+safeViewModelScope.launch {
+    val augmentedInput = memoryService.augmentQuery(message)
+    val userMsgId = UUID.randomUUID().toString()
+    val assistantId = UUID.randomUUID().toString()
+
+    val persistedImagePath: String? = transientImageUri?.let { uriString ->
+        imageStore.copyToInternal(
+            src = uriString.toUri(),
+            conversationId = conversationId,
+            messageId = userMsgId,
+        )
+    }
+    if (transientImageUri != null && persistedImagePath == null) {
+        postError("Failed to attach image")
+        return@launch
+    }
+
+    messageDao.insert(MessageEntity(
+        id = userMsgId, conversationId = conversationId,
+        role = "User", text = message, reasoning = "",
+        timestamp = System.currentTimeMillis(), imageUri = persistedImagePath,
+    ))
+
+    val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
+        text = message, timestamp = currentTime(), imageUri = persistedImagePath)
+    // ... rest of sendMessage unchanged from Phase 4 ...
+}
+```
+
+**`loadConversation` — defensive file existence check:**
+```kotlin
+_messages.value = messageDao.getMessages(conversationId).reversed().map { entity ->
+    val safeImage = entity.imageUri?.takeIf { File(it).exists() }
+    ChatMessage(
+        id = entity.id,
+        role = /* ... */,
+        text = entity.text,
+        timestamp = /* ... */,
+        imageUri = safeImage,
+        reasoning = entity.reasoning,
+    )
+}
+```
+
+**New: `deleteConversation`:**
+```kotlin
+fun deleteConversation(conversationId: String) {
+    safeViewModelScope.launch {
+        conversationDao.delete(conversationId)
+        imageStore.deleteConversationFolder(conversationId)
+        if (_currentConversationId.value == conversationId) {
+            startNewConversation()
+        }
+    }
+}
+```
+
+### 6.4 UI — long-press → confirm dialog → delete
+
+**`ConversationRow` composable with `combinedClickable`:**
+```kotlin
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ConversationRow(
+    conversation: ConversationHistory,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(containerColor)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showConfirm = true },
+            )
+            .padding(12.dp)
+            .fillMaxWidth()
+    ) {
+        Text(text = conversation.title, ...)
+        // ... preview + time ...
+    }
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("Delete conversation?") },
+            text = { Text("This will permanently remove the conversation and its images.") },
+            confirmButton = {
+                TextButton(onClick = { showConfirm = false; onDelete() }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+```
+
+**Plumb `onDeleteConversation` through `ChatScreen` → `ChatScreenContent` → `DrawerContent`.**
+
+### 6.5 Behavior summary
+
+| Scenario | Behavior |
+|----------|----------|
+| Pick → send | Image copied to `images/<convId>/<msgId>.webp` (224px WebP) |
+| Gallery deletion between pick and send | Fine — we own the copy |
+| App restart with saved conversation | File path stable, no URI permission issues |
+| Manual file deletion of a single image | `loadConversation` filters it out via `File.exists()` |
+| Long-press row → Delete → Confirm | `conversationDao.delete()` + `imageStore.deleteConversationFolder()` + reset UI if active |
+| Crash between Room delete and file delete | Orphan sweep at next `init` cleans up |
+| Active conversation deleted | ViewModel calls `startNewConversation()` automatically |
+
+---
+
 ## Summary of Changes by File
 
 ### New files
@@ -950,7 +1179,8 @@ User types "tell me more"  (thinking=ON)
 | `local/.../data/AppDatabase.kt` | Room database class |
 | `local/.../di/DatabaseModule.kt` | Hilt module for Room |
 | `local/.../service/MemoryService.kt` | Naive RAG (keyword + cosine similarity) |
-| `app/.../ChatMLBuilder.kt` | ChatML formatting utility |
+| `app/.../data/ChatMLBuilder.kt` | ChatML formatting utility |
+| `app/.../data/ImageStore.kt` | Conversation-scoped image copy/delete with WebP encoding and orphan sweep |
 
 ### Modified files
 
@@ -961,6 +1191,7 @@ User types "tell me more"  (thinking=ON)
 | `memelm/.../memelm.cpp` | Add JNI for new native methods |
 | `memelm/.../InferenceEngine.kt` | Add `sendConversation()`, `sendConversationWithImage()` |
 | `memelm/.../InferenceEngineImpl.kt` | Implement new methods, add JNI externals |
-| `app/.../ChatViewModel.kt` | Inject MemoryService + DAOs, rewrite sendMessage, add toggleThinking |
-| `app/.../model/AppModels.kt` | Add `isThinkingEnabled` to `ChatUiState` |
-| `app/.../ui/screen/ChatScreen.kt` | Wire conversation list, add reasoning toggle button |
+| `app/.../ChatViewModel.kt` | Inject MemoryService + DAOs + ImageStore, rewrite sendMessage, add `toggleThinking`, `loadConversation`, `deleteConversation`, orphan sweep in `init` |
+| `app/.../model/AppModels.kt` | Add `isThinkingEnabled` to `ChatUiState`; new `ConversationHistory` data class |
+| `app/.../ui/screen/ChatScreen.kt` | Wire conversation list, add reasoning toggle button, long-press → confirm delete dialog |
+

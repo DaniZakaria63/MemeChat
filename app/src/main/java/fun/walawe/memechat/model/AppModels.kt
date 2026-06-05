@@ -51,6 +51,13 @@ data class ChatUiState(
     val isThinkingEnabled: Boolean = false,
 )
 
+data class ConversationHistory(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val time: String,
+)
+
 data class SettingsUiState(
     val deviceInfo: List<Pair<String, String>> = emptyList(),
     val backendInfo: List<Pair<String, String>> = emptyList(),
