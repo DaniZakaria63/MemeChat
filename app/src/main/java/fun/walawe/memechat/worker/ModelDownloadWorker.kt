@@ -89,14 +89,17 @@ class ModelDownloadWorker @AssistedInject constructor(
             }
 
             if (!downloadResult.isSuccess) {
+                val exception = downloadResult.exceptionOrNull()
+                Timber.e(exception, "Download failed for ${target.fileName} (attempt ${runAttemptCount + 1})")
+
                 if (runAttemptCount < MAX_RETRIES) {
                     Timber.d("Retrying download (attempt ${runAttemptCount + 1}/${MAX_RETRIES})")
                     return Result.retry()
                 }
 
-                val error = when(val exception = downloadResult.exceptionOrNull()) {
-                    is UnknownHostException -> NotFoundException("Server unreachable")
-                    else -> BadRequestException("Failed to download model: ${exception?.message}")
+                val error = when(exception) {
+                    is UnknownHostException -> NotFoundException("Server unreachable: ${exception.message ?: "unknown host"}")
+                    else -> BadRequestException("Failed to download model: ${exception?.message ?: exception?.let { it::class.simpleName } ?: "unknown error"}")
                 }
 
                 return Result.failure(workDataOf(

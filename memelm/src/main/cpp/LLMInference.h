@@ -20,8 +20,18 @@ public:
     bool init(const char* modelPath, const char* mmprojPath,
               const char* backendPath, int contextSize, bool useVulkan);
 
-    std::string processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt, const TokenCallback* cb = nullptr);
-    std::string processTextOnly(const char* prompt, const TokenCallback* cb = nullptr);
+    // Process pre-formatted ChatML string from Kotlin.
+    // resetFirst=true  → clears KV cache (new/reloaded conversation)
+    // resetFirst=false → appends to KV cache (ongoing turn)
+    // forReasoning NOT needed — Kotlin already baked <think> into the ChatML.
+    std::string processConversation(const char* chatML, bool resetFirst, const TokenCallback* cb = nullptr);
+
+    // Image+text inference with KV cache persistence.
+    // C++ builds the prompt because only it can call mtmd_default_marker().
+    // forReasoning IS needed here — C++ constructs the prompt string.
+    std::string processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
+                                     bool resetFirst, bool forReasoning,
+                                     const TokenCallback* cb = nullptr);
 
     std::string getBackendInfo();
     void setSystemPrompt(const std::string& sysPrompt);
@@ -55,8 +65,8 @@ private:
     // `n_new_tokens` more tokens. Caller should resetContext() or warn user.
     bool hasContextHeadroom(int n_new_tokens) const;
 
-    // Helper to build prompt (adjusted for MiniCPM-V style + reasoning support)
-    std::string buildPrompt(const std::string& systemPrompt, const std::string& userPrompt, bool forReasoning = true);
     std::string buildImagePrompt(mtmd_context* mtmd_ctx, const std::string& systemPrompt,
                                  const std::string& userPrompt, bool forReasoning = true);
+    // Continuation-only image prompt (no system prompt, no history)
+    std::string buildImageTurnPrompt(const std::string& userPrompt, bool forReasoning);
 };

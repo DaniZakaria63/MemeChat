@@ -13,14 +13,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.channelFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,10 +70,21 @@ class InferenceEngineImpl private constructor(
     external fun nativeSetSystemPrompt(prompt: String)
 
     @FastNative
-    external fun nativeProcessImageAndText(bitmap: Bitmap, prompt: String, tokenCallback: StreamCallback)
+    external fun nativeProcessImageAndText(
+        bitmap: Bitmap,
+        prompt: String,
+        resetFirst: Boolean,
+        forReasoning: Boolean,
+        tokenCallback: StreamCallback,
+    )
+
 
     @FastNative
-    external fun nativeProcessTextOnly(prompt: String, tokenCallback: StreamCallback)
+    external fun nativeProcessConversation(
+        chatML: String,
+        resetFirst: Boolean,
+        tokenCallback: StreamCallback,
+    )
 
     @FastNative
     external fun nativeGetBackendInfo(): String
@@ -93,7 +101,6 @@ class InferenceEngineImpl private constructor(
     @FastNative
     external fun nativeIsGenerating(): Boolean
 
-    val channel = Channel<String>(capacity = Channel.UNLIMITED)
     private val _state =
         MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
@@ -195,120 +202,88 @@ class InferenceEngineImpl private constructor(
             }
         }
 
-    override fun sendUserPrompt(message: String): Flow<Pair<STATE, String>> =
-        callbackFlow<Pair<STATE, String>> {
-            require(message.isNotEmpty()) { "User prompt discarded due to being empty!" }
-            check(state.value.isModelLoaded) { "Model not ready" }
+    override fun sendConversation(
+        chatML: String,
+        resetFirst: Boolean,
+        forReasoning: Boolean,
+    ): Flow<Pair<STATE, String>> = callbackFlow {
+        require(chatML.isNotEmpty()) { "User prompt cannot be empty" }
+        check(state.value.isModelLoaded) { "Model not ready" }
 
-            Log.i(TAG, "Processing user prompt")
-            _state.value = InferenceEngine.State.Generating
-            nativeResetContext()
+        _state.value = InferenceEngine.State.Generating
 
-            try {
-                var inThinking = true
-                val callback = object : StreamCallback {
-                    override fun onToken(token: String) {
-                        when {
-                            inThinking && token.contains("</think>") -> {
-                                inThinking = false
-                            }
-
-                            inThinking -> {
-                                channel.trySend(
-                                    Pair(STATE.THINKING, token)
-                                )
-                            }
-
-                            else -> {
-                                channel.trySend(
-                                    Pair(
-                                        STATE.ANSWER, token
-                                    )
-                                )
-                            }
+        try {
+            val callback = object : StreamCallback {
+                var thinkingSeen = forReasoning
+                override fun onToken(token: String) {
+                    when {
+                        !thinkingSeen && token.contains("<think>") -> {
+                            thinkingSeen = true
+                            val after = token.substringAfter("<think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.THINKING, after))
+                        }
+                        !thinkingSeen -> trySend(Pair(STATE.ANSWER, token))
+                        !token.contains("</think>") -> trySend(Pair(STATE.THINKING, token))
+                        else -> {
+                            thinkingSeen = false
+                            val after = token.substringAfter("</think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.ANSWER, after))
                         }
                     }
-
-                    override fun onComplete() {
-                        close()
-                        Log.i(TAG, "Generation complete")
-                    }
                 }
-                nativeProcessTextOnly(message, callback)
-            } catch (e: CancellationException) {
-                _state.value = InferenceEngine.State.ModelReady
-                close()
-                throw e
-            } catch (e: Exception) {
-                _state.value = InferenceEngine.State.Error(e)
-                close(e)
-                throw e
-            } finally {
-                _state.value = InferenceEngine.State.ModelReady
-                close()
-                awaitClose()
+                override fun onComplete() { close() }
             }
-        }.flowOn(llamaDispatcher)
+            nativeProcessConversation(chatML, resetFirst, callback)
+        } catch (e: CancellationException) {
+            _state.value = InferenceEngine.State.ModelReady; close(); throw e
+        } catch (e: Exception) {
+            _state.value = InferenceEngine.State.Error(e); close(e)
+        } finally {
+            _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+        }
+    }.flowOn(llamaDispatcher)
 
-    override fun sendUserPromptWithImage(
+    override fun sendConversationWithImage(
         bitmap: Bitmap,
-        message: String
-    ): Flow<Pair<STATE, String>> =
-        channelFlow<Pair<STATE, String>> {
-            check(message.isNotBlank()) { "User prompt cannot be blank" }
-            check(state.value.isModelLoaded) { "Model not ready" }
+        message: String,
+        resetFirst: Boolean,
+        forReasoning: Boolean,
+    ): Flow<Pair<STATE, String>> = callbackFlow {
+        check(state.value.isModelLoaded) { "Model not ready" }
 
-            nativeResetContext()
-            _state.value = InferenceEngine.State.Generating
-            Log.i(TAG, "Processing user prompt with image")
+        _state.value = InferenceEngine.State.Generating
+        val scaledBitmap = prepareImageForModel(bitmap)
 
-            val scaledBitmap = prepareImageForModel(bitmap)
-            try {
-                var inThinking = true
-                val callback = object : StreamCallback {
-                    override fun onToken(token: String) {
-                        when {
-                            inThinking && token.contains("</think>") -> {
-                                inThinking = false
-                            }
-
-                            inThinking -> {
-                                channel.trySend(
-                                    Pair(STATE.THINKING, token)
-                                )
-                            }
-
-                            else -> {
-                                channel.trySend(
-                                    Pair(
-                                        STATE.ANSWER, token
-                                    )
-                                )
-                            }
+        try {
+            val callback = object : StreamCallback {
+                var thinkingSeen = forReasoning
+                override fun onToken(token: String) {
+                    when {
+                        !thinkingSeen && token.contains("<think>") -> {
+                            thinkingSeen = true
+                            val after = token.substringAfter("<think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.THINKING, after))
+                        }
+                        !thinkingSeen -> trySend(Pair(STATE.ANSWER, token))
+                        !token.contains("</think>") -> trySend(Pair(STATE.THINKING, token))
+                        else -> {
+                            thinkingSeen = false
+                            val after = token.substringAfter("</think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.ANSWER, after))
                         }
                     }
-
-                    override fun onComplete() {
-                        close()
-                        Log.i(TAG, "Generation complete")
-                    }
                 }
-                nativeProcessImageAndText(scaledBitmap, message, callback)
-            } catch (e: CancellationException) {
-                _state.value = InferenceEngine.State.ModelReady
-                close()
-                throw e
-            } catch (e: Exception) {
-                _state.value = InferenceEngine.State.Error(e)
-                close(e)
-                throw e
-            }finally {
-                _state.value = InferenceEngine.State.ModelReady
-                channel.close()
-                awaitClose()
+                override fun onComplete() { close() }
             }
-        }.flowOn(llamaDispatcher)
-
+            nativeProcessImageAndText(scaledBitmap, message, resetFirst, forReasoning, callback)
+        } catch (e: CancellationException) {
+            _state.value = InferenceEngine.State.ModelReady; close(); throw e
+        } catch (e: Exception) {
+            _state.value = InferenceEngine.State.Error(e); close(e)
+        } finally {
+            _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+        }
+    }.flowOn(llamaDispatcher)
 
     override fun cancelGeneration() {
         nativeCancelGeneration()
@@ -322,19 +297,6 @@ class InferenceEngineImpl private constructor(
         cancelGeneration()
         llamaScope.cancel()
         Log.i(TAG, "Inference engine destroyed")
-    }
-
-    private fun parseReasoningAndResponse(fullOutput: String): Pair<String, String?> {
-        val thinkStart = fullOutput.indexOf("<think>")
-        val thinkEnd = fullOutput.indexOf("</think>")
-
-        return if (thinkStart != -1 && thinkEnd != -1) {
-            val reasoning = fullOutput.substring(thinkStart + 7, thinkEnd).trim()
-            val answer = fullOutput.substring(thinkEnd + 8).trim()
-            answer to reasoning
-        } else {
-            fullOutput to null
-        }
     }
 
     private fun prepareImageForModel(bitmap: Bitmap): Bitmap {

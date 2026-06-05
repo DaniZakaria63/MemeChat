@@ -24,7 +24,7 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeInit(
 JNIEXPORT void JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndText(
         JNIEnv *env, jobject, jobject bitmap,
-        jstring prompt, jobject tokenCallback) {
+        jstring prompt, jboolean resetFirst, jboolean forReasoning, jobject tokenCallback) {
 
     TokenCallback cb{};
     jclass cls      = env->GetObjectClass(tokenCallback);
@@ -34,23 +34,21 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndText(
     jmethodID onComplete = env->GetMethodID(cls, "onComplete", "()V");
 
     if (cb.onToken == nullptr) {
-        LOGe("GetMethodID failed — onToken not found on callback object");
-        env->ExceptionClear(); // GetMethodID throws if not found
+        LOGe("GetMethodID failed");
+        env->ExceptionClear();
         return;
     }
     env->DeleteLocalRef(cls);
 
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
-    g_inference.processImageAndText(env, bitmap, promptStr, &cb);
+    g_inference.processImageAndText(env, bitmap, promptStr, resetFirst, forReasoning, &cb);
     env->ReleaseStringUTFChars(prompt, promptStr);
-    if (onComplete) {
-        env->CallVoidMethod(tokenCallback, onComplete);
-    }
+    if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
 }
 
 JNIEXPORT void JNICALL
-Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessTextOnly(
-        JNIEnv *env, jobject, jstring prompt, jobject tokenCallback) {
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
+        JNIEnv *env, jobject, jstring chatML, jboolean resetFirst, jobject tokenCallback) {
 
     TokenCallback cb{};
     jclass cls      = env->GetObjectClass(tokenCallback);
@@ -60,18 +58,16 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessTextOnly(
     jmethodID onComplete = env->GetMethodID(cls, "onComplete", "()V");
 
     if (cb.onToken == nullptr) {
-        LOGe("GetMethodID failed — onToken not found on callback object");
-        env->ExceptionClear(); // GetMethodID throws if not found
+        LOGe("GetMethodID failed");
+        env->ExceptionClear();
         return;
     }
     env->DeleteLocalRef(cls);
 
-    const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
-    g_inference.processTextOnly(promptStr, &cb);
-    env->ReleaseStringUTFChars(prompt, promptStr);
-    if (onComplete) {
-        env->CallVoidMethod(tokenCallback, onComplete);
-    }
+    const char *promptStr = env->GetStringUTFChars(chatML, nullptr);
+    g_inference.processConversation(promptStr, resetFirst, &cb);
+    env->ReleaseStringUTFChars(chatML, promptStr);
+    if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
 }
 
 JNIEXPORT jstring JNICALL

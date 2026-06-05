@@ -1,9 +1,7 @@
 package `fun`.walawe.memechat.ui.screen
 
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build.VERSION.SDK_INT
-import android.view.TextureView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,10 +10,15 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +35,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -45,30 +47,25 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.AddComment
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -78,13 +75,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,52 +89,47 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
+import com.halilibo.richtext.commonmark.Markdown
+import com.halilibo.richtext.ui.BasicRichText
+import com.halilibo.richtext.ui.RichTextThemeProvider
 import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
+import `fun`.walawe.memechat.model.ConversationHistory
 import `fun`.walawe.memechat.presenter.ChatViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.core.net.toUri
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.RawResourceDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import coil.ImageLoader
-import coil.compose.rememberAsyncImagePainter
-import coil.decode.GifDecoder
-import coil.decode.ImageDecoderDecoder
-import `fun`.walawe.memechat.presenter.DummyConversation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,6 +140,8 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val currentConversationId by viewModel.currentConversationId.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -168,13 +161,19 @@ fun ChatScreen(
         drawerState = drawerState,
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
-        conversations = viewModel.dummyConversations,
-        selectedConversationId = "none", // Haven't implemented conversation switching yet
+        conversations = conversations,
+        selectedConversationId = currentConversationId ?: "",
         onNewChat = {
             scope.launch { drawerState.close() }
             viewModel.startNewConversation()
         },
-        onSelectConversation = {},
+        onSelectConversation = { id ->
+            scope.launch { drawerState.close() }
+            viewModel.loadConversation(id)
+        },
+        onDeleteConversation = { id ->
+            viewModel.deleteConversation(id)
+        },
         onAttach = {
             galleryLauncher.launch(
                 PickVisualMediaRequest(
@@ -191,6 +190,8 @@ fun ChatScreen(
             }
         },
         onDismissError = viewModel::clearError,
+        isThinkingEnabled = uiState.isThinkingEnabled,
+        onToggleThinking = { viewModel.toggleThinking() },
     )
 }
 
@@ -205,14 +206,17 @@ private fun ChatScreenContent(
     drawerState: DrawerState,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
-    conversations: List<DummyConversation>,
+    conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
+    onDeleteConversation: (String) -> Unit,
     onAttach: () -> Unit,
     onRemoveImage: () -> Unit,
     onSend: () -> Unit,
     onDismissError: () -> Unit,
+    isThinkingEnabled: Boolean,
+    onToggleThinking: () -> Unit,
 ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -228,6 +232,7 @@ private fun ChatScreenContent(
                     selectedConversationId = selectedConversationId,
                     onNewChat = onNewChat,
                     onSelectConversation = onSelectConversation,
+                    onDeleteConversation = onDeleteConversation,
                     onOpenSettings = onOpenSettings
                 )
             }
@@ -242,12 +247,19 @@ private fun ChatScreenContent(
                     modifier = Modifier.fillMaxWidth().shadow(4.dp),
                     windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
                     title = {
-                        Text(
-                            text = if(uiState.isNewConversation) "New Conversation" else "MemeLM Chat",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if(uiState.isNewConversation) "New Conversation" else "MemeLM Chat",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "MiniCPM-V4.6",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onOpenDrawer) {
@@ -281,7 +293,9 @@ private fun ChatScreenContent(
                     onInputChange = onInputChange,
                     onAttach = onAttach,
                     onRemoveImage = onRemoveImage,
-                    onSend = onSend
+                    onSend = onSend,
+                    isThinkingEnabled = isThinkingEnabled,
+                    onToggleThinking = onToggleThinking,
                 )
             }
         ) { padding ->
@@ -313,10 +327,11 @@ private fun ChatScreenContent(
 
 @Composable
 private fun DrawerContent(
-    conversations: List<DummyConversation>,
+    conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
+    onDeleteConversation: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Box(
@@ -328,6 +343,7 @@ private fun DrawerContent(
             modifier =  Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
+                .fillMaxHeight()
                 .padding(bottom = 70.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -354,36 +370,12 @@ private fun DrawerContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(conversations) { convo ->
-                    val selected = convo.id == selectedConversationId
-                    val containerColor = if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    }
-                    Column(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(containerColor)
-                            .clickable { onSelectConversation(convo.id) }
-                            .padding(12.dp)
-                            .fillMaxWidth()
-                    ) {
-                        Text(text = convo.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = convo.preview,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = convo.time,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    ConversationRow(
+                        conversation = convo,
+                        isSelected = convo.id == selectedConversationId,
+                        onClick = { onSelectConversation(convo.id) },
+                        onDelete = { onDeleteConversation(convo.id) },
+                    )
                 }
             }
         }
@@ -397,6 +389,71 @@ private fun DrawerContent(
             HorizontalDivider()
             SettingsDrawerItem(onClick = onOpenSettings)
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ConversationRow(
+    conversation: ConversationHistory,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(containerColor)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showConfirm = true },
+            )
+            .fillMaxWidth()
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = conversation.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = conversation.time,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (showConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConfirm = false },
+            title = { Text("Delete conversation?") },
+            text = { Text("This will permanently remove the conversation and its images.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showConfirm = false
+                    onDelete()
+                }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -445,7 +502,7 @@ private fun MessageBubble(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
     ) {
-        if(!isUser){
+        if(!isUser && message.reasoning.isNotEmpty()){
             CollapsibleReasoningSection(
                 modifier = Modifier.padding(top =8.dp),
                 title = Pair("Let me cook...", "Reasoning Process"),
@@ -488,13 +545,21 @@ private fun MessageBubble(
                     )
                 }
 
-                Text(
-                    text = message.text.trim().ifEmpty { "..." },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
-                    color = textColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                if (isUser) {
+                    Text(
+                        text = message.text.trim().ifEmpty { "..." },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = MaterialTheme.typography.bodyMedium.fontWeight,
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                } else {
+                    MarkdownContent(
+                        content = message.text.trim().ifEmpty { "..." },
+                        color = textColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -514,7 +579,9 @@ private fun InputBar(
     onInputChange: (String) -> Unit,
     onAttach: () -> Unit,
     onRemoveImage: () -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    isThinkingEnabled: Boolean,
+    onToggleThinking: () -> Unit,
 ) {
     Card(
         modifier = Modifier.padding(top = 8.dp, bottom = 24.dp, start = 16.dp, end = 16.dp) ,
@@ -569,6 +636,8 @@ private fun InputBar(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurfaceVariant),
                 singleLine = false,
                 maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
                 decorationBox = { innerTextField ->
                     if (inputText.isEmpty()) {
                         Text(
@@ -592,10 +661,10 @@ private fun InputBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ModelButton(
-                        onClick = { },
+                        onClick = onToggleThinking,
                         icon = Icons.Filled.AutoAwesome,
-                        text = "MiniCPM-V4.6",
-                        isHighlight = true
+                        text = "Thinking",
+                        isHighlight = isThinkingEnabled
                     )
 
                     ModelButton(
@@ -642,20 +711,20 @@ fun SettingsDrawerItem(onClick: () -> Unit) {
             Icon(
                 imageVector = Icons.Default.Settings,
                 contentDescription = "Settings",
-                tint = Color.Gray,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
             Text(
                 text = "Settings",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.Black
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.weight(1f))
             Icon(
                 imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.Gray.copy(alpha = 0.6f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -882,18 +951,40 @@ fun CollapsibleReasoningSection(
                 VerticalDivider(
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
-                Text(
-                    text = content,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = MaterialTheme.typography.bodySmall.fontWeight,
+                MarkdownContent(
+                    content = content,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 4.dp),
+                    fontSize = MaterialTheme.typography.bodySmall.fontSize,
                 )
             }
         }
     }
 }
 
+
+@Composable
+private fun MarkdownContent(
+    content: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = MaterialTheme.typography.bodyMedium.fontSize,
+) {
+    RichTextThemeProvider(
+        textStyleProvider = { TextStyle(color = color, fontSize = fontSize) },
+        contentColorProvider = { color },
+        textStyleBackProvider = { newStyle, children ->
+            CompositionLocalProvider(LocalTextStyle provides newStyle) { children() }
+        },
+        contentColorBackProvider = { newColor, children ->
+            CompositionLocalProvider(LocalContentColor provides newColor) { children() }
+        },
+    ) {
+        BasicRichText(modifier = modifier) {
+            Markdown(content = content)
+        }
+    }
+}
 
 @Preview(showBackground = true)
 @Composable
@@ -925,10 +1016,13 @@ private fun ChatScreenPreviewLight() {
                 selectedConversationId = "",
                 onNewChat = {},
                 onSelectConversation = {},
+                onDeleteConversation = {},
                 onAttach = {},
                 onRemoveImage = {},
                 onSend = {},
                 onDismissError = {},
+                isThinkingEnabled = false,
+                onToggleThinking = {},
             )
         }
     }
@@ -954,10 +1048,13 @@ private fun ChatScreenPreviewDark() {
                 selectedConversationId = "",
                 onNewChat = {},
                 onSelectConversation = {},
+                onDeleteConversation = {},
                 onAttach = {},
                 onRemoveImage = {},
                 onSend = {},
                 onDismissError = {},
+                isThinkingEnabled = false,
+                onToggleThinking = {},
             )
         }
     }

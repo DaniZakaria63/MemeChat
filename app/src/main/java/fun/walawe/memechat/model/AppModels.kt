@@ -48,6 +48,14 @@ data class ChatUiState(
     val isProcessing: Boolean = false,
     val selectedImageUri: String? = null,
     val error: String? = null,
+    val isThinkingEnabled: Boolean = false,
+)
+
+data class ConversationHistory(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val time: String,
 )
 
 data class SettingsUiState(
