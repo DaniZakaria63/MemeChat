@@ -20,6 +20,14 @@ The modules are intentionally separated by responsibility. `constant` feeds into
 
 ---
 
+## Latest Preview
+
+Per-Friday/5/June/2026.
+
+https://github.com/user-attachments/assets/3806f5f4-ee26-4de9-b89e-91a1f61fade1
+
+---
+
 ## Modules
 
 ### `memelm` — On-Device Inference Engine
