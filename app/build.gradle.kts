@@ -47,6 +47,7 @@ dependencies {
     implementation(project(":constant"))
     implementation(project(":modelpull"))
     implementation(project(":memelm"))
+    implementation(project(":local"))
 
     implementation(libs.androidx.coroutine)
     implementation(libs.androidx.core.ktx)
