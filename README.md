@@ -68,6 +68,27 @@ This module handles everything related to fetching model files from a remote sou
 
 ---
 
+### `local` — Conversation Local History 
+
+This RoomDB persistance module only to maintain the conversation memory to support the chat environment.
+Naive RAG is only due by query + best_matching_record = augmented_input.
+
+**Responsibilities:**
+- Main place to save conversation history across app.
+- Past  messages retrieval and processing to get augmented_input.
+- Have **conversation list** so the user can just select conversation they want.
+- Ability to save image locally and save the path as copy Uri.
+- The sentence save as given llm style which markdown, so the display use markdown style renderer 
+
+**Key internals:**
+
+| Concern | Technology                                     |
+|---|------------------------------------------------|
+| RoomDB | [Room](https://developer.android.com/jetpack/androidx/releases/room)     |
+| Markdown | [Halilibo](https://halilibo.com/compose-richtext/) |
+
+---
+
 ### `constant` — Shared Configuration
 
 A configuration-only module that acts as the single source of truth for all compile-time and runtime constants shared across the other modules.
