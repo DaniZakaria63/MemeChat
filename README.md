@@ -20,6 +20,14 @@ The modules are intentionally separated by responsibility. `constant` feeds into
 
 ---
 
+## Latest Preview
+
+Per-Friday/5/June/2026.
+
+https://github.com/user-attachments/assets/3806f5f4-ee26-4de9-b89e-91a1f61fade1
+
+---
+
 ## Modules
 
 ### `memelm` — On-Device Inference Engine
@@ -65,6 +73,27 @@ This module handles everything related to fetching model files from a remote sou
 | HTTP client | [OkHttp](https://square.github.io/okhttp/)     |
 | REST abstraction | [Retrofit](https://square.github.io/retrofit/) |
 | Progress tracking | Response `Retrofit` to `Worker Manager`        |
+
+---
+
+### `local` — Conversation Local History 
+
+This RoomDB persistance module only to maintain the conversation memory to support the chat environment.
+Naive RAG is only due by query + best_matching_record = augmented_input.
+
+**Responsibilities:**
+- Main place to save conversation history across app.
+- Past  messages retrieval and processing to get augmented_input.
+- Have **conversation list** so the user can just select conversation they want.
+- Ability to save image locally and save the path as copy Uri.
+- The sentence save as given llm style which markdown, so the display use markdown style renderer 
+
+**Key internals:**
+
+| Concern | Technology                                     |
+|---|------------------------------------------------|
+| RoomDB | [Room](https://developer.android.com/jetpack/androidx/releases/room)     |
+| Markdown | [Halilibo](https://halilibo.com/compose-richtext/) |
 
 ---
 
