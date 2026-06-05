@@ -96,22 +96,6 @@ static constexpr const char* TOK_ASSISTANT  = "assistant\n";
 static constexpr const char* TOK_THINK_START  = "<think>";
 static constexpr const char* TOK_THINK_END = "</think>";
 
-// Builds the full chat-formatted prompt string.
-std::string LLMInference::buildPrompt(const std::string& systemPrompt, const std::string& userPrompt, bool forReasoning) {
-    string p;
-    if (!systemPrompt.empty()) {
-        p += TOK_IM_START; p += TOK_SYSTEM;
-        p += systemPrompt;
-        p += TOK_IM_END;   p += "\n";
-    }
-    p += TOK_IM_START; p += TOK_USER;
-    p += userPrompt;
-    p += TOK_IM_END;   p += "\n";
-    p += TOK_IM_START; p += TOK_ASSISTANT;
-    if (forReasoning) p += TOK_THINK_START; p += "\n";
-    return p;
-}
-
 std::string LLMInference::buildImagePrompt(mtmd_context* mtmd_ctx,
                                const string& systemPrompt,
                                const string& userPrompt,
@@ -124,6 +108,19 @@ std::string LLMInference::buildImagePrompt(mtmd_context* mtmd_ctx,
         p += systemPrompt;
         p += TOK_IM_END;   p += "\n";
     }
+    p += TOK_IM_START; p += TOK_USER; p += "\n";
+    p += marker;
+    p += "\n";
+    p += userPrompt;
+    p += TOK_IM_END;   p += "\n";
+    p += TOK_IM_START; p += TOK_ASSISTANT;
+    if (forReasoning) p += TOK_THINK_START;  p += "\n";
+    return p;
+}
+
+string LLMInference::buildImageTurnPrompt(const string& userPrompt, bool forReasoning) {
+    const char* marker = mtmd_default_marker();
+    string p;
     p += TOK_IM_START; p += TOK_USER; p += "\n";
     p += marker;
     p += "\n";
@@ -226,10 +223,8 @@ string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb)
             break;
         }
 
-        // Advance the member-level cursor. This is what keeps the KV cache
-        // and n_past in sync across multiple calls to processTextOnly /
-        // processImageAndText. If this were a local variable, the next call
-        // would reset to 0 and corrupt the KV cache state.
+        // Advance the member-level cursor. This keeps the KV cache
+        // and n_past in sync across multiple calls.
         m_n_past++;
     }
 
@@ -351,11 +346,18 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     return true;
 }
 
-// Image + Text inference
-std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt, const TokenCallback* cb) {
+// Image + Text inference with KV cache persistence
+std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
+                                               bool resetFirst, bool forReasoning,
+                                               const TokenCallback* cb) {
     if (!m_mtmd_ctx || !m_ctx) {
         LOGe("processImageAndText: engine not initialized");
         return "";
+    }
+
+    if (resetFirst) {
+        resetContext();
+        LOGi("processImageAndText: context reset for new conversation");
     }
 
     std::vector<uint8_t> rgb = bitmapToRGB(env, bitmap);
@@ -374,7 +376,10 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    const string full_prompt = buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt, true);
+    // C++ builds the prompt because only it can call mtmd_default_marker()
+    const string full_prompt = resetFirst
+        ? buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt, forReasoning)
+        : buildImageTurnPrompt(prompt, forReasoning);
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();
@@ -384,7 +389,7 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     mtmd_input_chunks*    chunks     = mtmd_input_chunks_init();
     const mtmd_bitmap*    bitmaps[]  = { bmp };
     const int             res        = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, bitmaps, 1);
-    mtmd_bitmap_free(bmp); // free immediately after tokenize — safe
+    mtmd_bitmap_free(bmp);
 
     if (res != 0) {
         LOGe("processImageAndText: mtmd_tokenize failed (%d)", res);
@@ -392,14 +397,12 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    if (!hasContextHeadroom(512 /* approx vision + text tokens */)) {
-        LOGw("processImageAndText: not enough context — call resetContext() first");
+    if (!hasContextHeadroom(512)) {
+        LOGw("processImageAndText: not enough context");
         mtmd_input_chunks_free(chunks);
         return "";
     }
 
-    // mtmd_helper_eval_chunks appends to KV cache starting at m_n_past
-    // and writes the new cursor position back into m_n_past
     if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, m_n_past, 0, 512, true, &m_n_past) != 0) {
         LOGe("processImageAndText: mtmd_helper_eval_chunks failed");
         mtmd_input_chunks_free(chunks);
@@ -407,18 +410,22 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     }
     mtmd_input_chunks_free(chunks);
 
-    LOGi("processImageAndText: prompt evaluated, n_past=%d, generating...", (int)m_n_past);
+    LOGi("processImageAndText: evaluated, n_past=%d, generating...", (int)m_n_past);
     return generateTokens(512, cb);
 }
 
-// Text-only inference
-std::string LLMInference::processTextOnly(const char* prompt, const TokenCallback* cb) {
+std::string LLMInference::processConversation(const char* chatML, bool resetFirst, const TokenCallback* cb) {
     if (!m_ctx) {
-        LOGe("processTextOnly: engine not initialized");
+        LOGe("processConversation: engine not initialized");
         return "";
     }
 
-    const string full_prompt = buildPrompt(m_systemPrompt, prompt, true);
+    if (resetFirst) {
+        resetContext();
+        LOGi("processConversation: context reset for new conversation");
+    }
+
+    string full_prompt(chatML);
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();
@@ -426,29 +433,27 @@ std::string LLMInference::processTextOnly(const char* prompt, const TokenCallbac
     input_text.parse_special = true;
 
     mtmd_input_chunks* chunks = mtmd_input_chunks_init();
-    const int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
+    int res = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, nullptr, 0);
     if (res != 0) {
-        LOGe("processTextOnly: mtmd_tokenize failed (%d)", res);
+        LOGe("processConversation: mtmd_tokenize failed (%d)", res);
         mtmd_input_chunks_free(chunks);
         return "";
     }
 
-    // Context overflow check
     if (!hasContextHeadroom(256)) {
-        LOGw("processTextOnly: not enough context — call resetContext() first");
+        LOGw("processConversation: not enough context");
         mtmd_input_chunks_free(chunks);
         return "";
     }
 
-    // Append to KV cache at m_n_past; m_n_past is updated by the call
     if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, m_n_past, 0, 512, true, &m_n_past) != 0) {
-        LOGe("processTextOnly: mtmd_helper_eval_chunks failed");
+        LOGe("processConversation: mtmd_helper_eval_chunks failed");
         mtmd_input_chunks_free(chunks);
         return "";
     }
     mtmd_input_chunks_free(chunks);
 
-    LOGi("processTextOnly: prompt evaluated, n_past=%d, generating...", (int)m_n_past);
+    LOGi("processConversation: evaluated, n_past=%d, generating...", (int)m_n_past);
     return generateTokens(512, cb);
 }
 

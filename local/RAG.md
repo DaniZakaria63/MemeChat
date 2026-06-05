@@ -6,15 +6,31 @@
 ChatViewModel ──> MemoryService (Naive RAG) ──> MessageDao (Room, :local)
                 │
                 └──> InferenceEngine ──> JNI ──> LLMInference (C++, memelm)
-                     │
-                     new: processConversation(promptChatML, resetFirst)
+                     │                      │
+                     │  sendConversation()  │  processConversation(chatML, resetFirst)
+                     │                      │
+                     └── with image ────────┘  processImageAndText(bitmap, prompt, resetFirst, forReasoning)
 ```
 
 | Module | What changes |
 |--------|-------------|
 | `:local` | New: Room entities, DAOs, database, DI module, `MemoryService` |
-| `:memelm` | New C++ `processConversation()`, new JNI bridge, new Kotlin API |
-| `:app` | `ChatViewModel` builds ChatML, calls `sendConversation()`, integrates `MemoryService` |
+| `:memelm` | New C++ methods, new JNI bridge, new Kotlin API |
+| `:app` | `ChatViewModel` builds ChatML, integrates `MemoryService`, reasoning toggle |
+
+---
+
+## Core Insight: KV Cache Persistence
+
+The llama.cpp KV cache **holds the entire conversation** once context reset stops happening. This means:
+
+| Scenario | resetFirst | What to send to C++ |
+|----------|-----------|-------------------|
+| **New conversation** | `true` | Full ChatML: system + all messages → assistant turn |
+| **Continuing existing** | `false` | Short turn snippet only: user message → assistant turn |
+| **Reload saved from Room** | `true` | Full ChatML: system + all history from Room → assistant turn |
+
+The KV cache already has everything before the current turn — no need to re-send history.
 
 ---
 
@@ -23,13 +39,12 @@ ChatViewModel ──> MemoryService (Naive RAG) ──> MessageDao (Room, :local
 ### 1.1 Entity: `ConversationEntity`
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/data/ConversationEntity.kt
 @Entity(tableName = "conversations")
 data class ConversationEntity(
     @PrimaryKey val id: String,
     val title: String,
     val preview: String,
-    val updatedAt: Long,    // epoch millis for sorting
+    val updatedAt: Long,
     val createdAt: Long,
 )
 ```
@@ -37,21 +52,20 @@ data class ConversationEntity(
 ### 1.2 Entity: `MessageEntity`
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/data/MessageEntity.kt
 @Entity(
     tableName = "messages",
     foreignKeys = [ForeignKey(
         entity = ConversationEntity::class,
         parentColumns = ["id"],
         childColumns = ["conversationId"],
-        onDelete = ForeignKey.CASCADE
+        onDelete = ForeignKey.CASCADE,
     )],
-    indices = [Index("conversationId")]
+    indices = [Index("conversationId")],
 )
 data class MessageEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
-    val role: String,              // "User", "Assistant", "System"
+    val role: String,
     val text: String,
     val reasoning: String,
     val timestamp: Long,
@@ -62,7 +76,6 @@ data class MessageEntity(
 ### 1.3 DAOs
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/data/ConversationDao.kt
 @Dao
 interface ConversationDao {
     @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
@@ -72,31 +85,24 @@ interface ConversationDao {
     suspend fun getConversation(id: String): ConversationEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(conversation: ConversationEntity)
+    suspend fun insert(conversation: ConversationEntity)
 
-    @Delete
-    suspend fun delete(conversation: ConversationEntity)
+    @Query("DELETE FROM conversations WHERE id = :id")
+    suspend fun delete(id: String)
 }
 ```
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/data/MessageDao.kt
 @Dao
 interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY timestamp ASC")
-    fun getMessages(conversationId: String): Flow<List<MessageEntity>>
-
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY timestamp ASC")
-    suspend fun getMessagesOnce(conversationId: String): List<MessageEntity>
+    suspend fun getMessages(conversationId: String): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE role = 'User' ORDER BY timestamp ASC")
     suspend fun getAllUserMessages(): List<MessageEntity>
 
     @Insert
     suspend fun insert(message: MessageEntity)
-
-    @Insert
-    suspend fun insertAll(messages: List<MessageEntity>)
 
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     suspend fun deleteByConversation(conversationId: String)
@@ -106,11 +112,10 @@ interface MessageDao {
 ### 1.4 Database Class
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/data/AppDatabase.kt
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class],
     version = 1,
-    exportSchema = false
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
@@ -121,7 +126,6 @@ abstract class AppDatabase : RoomDatabase() {
 ### 1.5 Hilt DI Module
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/di/DatabaseModule.kt
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
@@ -131,8 +135,11 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "memechat.db")
             .build()
 
-    @Provides fun provideConversationDao(db: AppDatabase) = db.conversationDao()
-    @Provides fun provideMessageDao(db: AppDatabase) = db.messageDao()
+    @Provides
+    fun provideConversationDao(db: AppDatabase): ConversationDao = db.conversationDao()
+
+    @Provides
+    fun provideMessageDao(db: AppDatabase): MessageDao = db.messageDao()
 }
 ```
 
@@ -143,7 +150,6 @@ object DatabaseModule {
 ### 2.1 Keyword Search + Cosine Similarity
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/service/MemoryService.kt
 @Singleton
 class MemoryService @Inject constructor(
     private val messageDao: MessageDao,
@@ -155,16 +161,9 @@ class MemoryService @Inject constructor(
     )
 
     companion object {
-        const val MIN_KEYWORD_MATCH = 2   // quality gate threshold
+        const val MIN_KEYWORD_MATCH = 2
     }
 
-    /**
-     * Find the best matching record from all user messages using
-     * keyword set intersection (primary) + cosine similarity (metric).
-     *
-     * Equivalent to: sklearn.feature_extraction.text.CountVectorizer
-     *                + sklearn.metrics.pairwise.cosine_similarity
-     */
     suspend fun findBestMatch(query: String): KeywordMatchResult? {
         val queryKeywords = tokenize(query)
         val records = messageDao.getAllUserMessages()
@@ -175,16 +174,14 @@ class MemoryService @Inject constructor(
 
         for (record in records) {
             val recordKeywords = tokenize(record.text)
-            val keywordScore = queryKeywords.intersect(recordKeywords).size
+            val keywordScore = queryKeywords.keys.intersect(recordKeywords.keys).size
 
-            // Only consider records that pass the quality gate
             if (keywordScore >= MIN_KEYWORD_MATCH && keywordScore > bestScore) {
                 bestScore = keywordScore
                 bestRecord = record
             }
         }
 
-        // Among best keyword match, compute cosine similarity as metric
         return bestRecord?.let {
             val cosSim = cosineSimilarity(tokenize(query), tokenize(it.text))
             KeywordMatchResult(text = it.text, keywordScore = bestScore, cosineSimilarity = cosSim)
@@ -192,7 +189,8 @@ class MemoryService @Inject constructor(
     }
 
     /**
-     * CountVectorizer equivalent: tokenize -> count term frequencies
+     * Equivalent to sklearn's CountVectorizer.
+     * Tokenizes text and computes term frequencies.
      */
     private fun tokenize(text: String): Map<String, Int> {
         return text.lowercase()
@@ -204,9 +202,7 @@ class MemoryService @Inject constructor(
     }
 
     /**
-     * Cosine similarity between two term frequency vectors.
-     * Equivalent to sklearn's cosine_similarity(CountVectorizer output).
-     *
+     * Equivalent to sklearn's cosine_similarity.
      * cos(θ) = (A · B) / (||A|| * ||B||)
      */
     private fun cosineSimilarity(tf1: Map<String, Int>, tf2: Map<String, Int>): Float {
@@ -223,34 +219,32 @@ class MemoryService @Inject constructor(
             magnitudeB += f2 * f2
         }
 
-        val denom = kotlin.math.sqrt(magnitudeA) * kotlin.math.sqrt(magnitudeB)
+        val denom = sqrt(magnitudeA) * sqrt(magnitudeB)
         return if (denom > 0f) dotProduct / denom else 0f
     }
 
     /**
-     * Augmented input = query + ": " + best matching record
-     * Only returns augmented text if quality gate passes.
+     * Augmented input = query + ": " + best matching record.
+     * Falls back to original query if quality gate fails.
      */
     suspend fun augmentQuery(query: String): String {
         val result = findBestMatch(query)
         return if (result != null && result.keywordScore >= MIN_KEYWORD_MATCH) {
-            Timber.d("NaiveRAG: match score=${result.keywordScore} cosSim=%.4f".format(result.cosineSimilarity))
+            Timber.d("NaiveRAG: match score=%d cosSim=%.4f".format(result.keywordScore, result.cosineSimilarity))
             "$query: ${result.text}"
         } else {
-            query  // fallback to original query
+            query
         }
     }
 }
 ```
 
-### How this maps to sklearn
+### sklearn equivalence
 
 ```
-sklearn                          Kotlin equivalent
-────────────────────────────────────────────────────
 CountVectorizer().fit_transform   tokenize() -> Map<word, freq>
 cosine_similarity(vec1, vec2)     cosineSimilarity(tf1, tf2)
-set intersection of keywords      queryKeywords.intersect(recordKeywords)
+set intersection of keywords      queryKeywords.keys.intersect(recordKeywords.keys)
 ```
 
 ---
@@ -259,25 +253,39 @@ set intersection of keywords      queryKeywords.intersect(recordKeywords)
 
 ### Problem
 
-`nativeResetContext()` is called before every prompt in `InferenceEngineImpl.sendUserPrompt()`, clearing the KV cache entirely. `buildPrompt()` only wraps system + single user message — no history.
+`nativeResetContext()` is called before every prompt — clears KV cache. `buildPrompt()` only includes system + single user message. No history.
 
-### Solution: `processConversation()` in C++
+### Solution
 
-New API accepts **pre-formatted ChatML** (built in Kotlin from conversation history) with a `resetFirst` flag.
+Key design: **Kotlin owns prompt building for text** — C++ just receives the final ChatML string. **C++ owns prompt building for images** — only it can call `mtmd_default_marker()`.
+
+So `forReasoning` is:
+- **Not needed** in `processConversation()` — `<think>` is baked into ChatML by Kotlin's `ChatMLBuilder`
+- **Needed** in `processImageAndText()` — C++ constructs the prompt string and must know whether to insert `<think>`
 
 ### 3.1 C++: `LLMInference.h`
 
 ```cpp
 class LLMInference {
 public:
-    // NEW: Process a fully-formed ChatML prompt string.
-    // - If resetFirst=true, clears KV cache before processing (new conversation).
-    // - If resetFirst=false, appends to existing KV cache (continuing conversation).
+    // Process pre-formatted ChatML string from Kotlin.
+    // resetFirst=true  → clears KV cache, full ChatML from Kotlin (system + all messages)
+    // resetFirst=false → appends to KV cache, only user turn from Kotlin
+    // Kotlin already baked <think> into the ChatML if reasoning is enabled.
     std::string processConversation(const char* chatML, bool resetFirst, const TokenCallback* cb = nullptr);
+
+    // Image+text inference with KV cache persistence.
+    // C++ builds the prompt because only it can call mtmd_default_marker().
+    // forReasoning is needed here because C++ constructs the prompt string.
+    std::string processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
+                                     bool resetFirst, bool forReasoning,
+                                     const TokenCallback* cb = nullptr);
 };
 ```
 
 ### 3.2 C++: `LLMInference.cpp`
+
+#### `processConversation()` — text path (no forReasoning needed)
 
 ```cpp
 string LLMInference::processConversation(const char* chatML, bool resetFirst, const TokenCallback* cb) {
@@ -286,13 +294,14 @@ string LLMInference::processConversation(const char* chatML, bool resetFirst, co
         return "";
     }
 
-    // Optionally reset context for new conversation
     if (resetFirst) {
         resetContext();
         LOGi("processConversation: context reset for new conversation");
     }
 
     string full_prompt(chatML);
+    // No prompt building here — Kotlin's ChatMLBuilder already formatted everything,
+    // including <think> if reasoning is enabled. Just tokenize and evaluate.
 
     mtmd_input_text input_text;
     input_text.text          = full_prompt.c_str();
@@ -325,9 +334,98 @@ string LLMInference::processConversation(const char* chatML, bool resetFirst, co
 }
 ```
 
+#### `processImageAndText()` — image path (keeps forReasoning)
+
+```cpp
+string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
+                                          bool resetFirst, bool forReasoning,
+                                          const TokenCallback* cb) {
+    if (!m_mtmd_ctx || !m_ctx) {
+        LOGe("processImageAndText: engine not initialized");
+        return "";
+    }
+
+    if (resetFirst) {
+        resetContext();
+        LOGi("processImageAndText: context reset for new conversation");
+    }
+
+    std::vector<uint8_t> rgb = bitmapToRGB(env, bitmap);
+    if (rgb.empty()) return "";
+
+    AndroidBitmapInfo info;
+    AndroidBitmap_getInfo(env, bitmap, &info);
+
+    mtmd_bitmap* bmp = mtmd_bitmap_init(
+            static_cast<int>(info.width),
+            static_cast<int>(info.height),
+            rgb.data()
+    );
+    if (!bmp) {
+        LOGe("processImageAndText: mtmd_bitmap_init failed");
+        return "";
+    }
+
+    // C++ builds the prompt because only it can call mtmd_default_marker()
+    const string full_prompt = resetFirst
+        ? buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt, forReasoning)
+        : buildImageTurnPrompt(prompt, forReasoning);
+
+    mtmd_input_text input_text;
+    input_text.text          = full_prompt.c_str();
+    input_text.add_special   = true;
+    input_text.parse_special = true;
+
+    mtmd_input_chunks*    chunks     = mtmd_input_chunks_init();
+    const mtmd_bitmap*    bitmaps[]  = { bmp };
+    const int             res        = mtmd_tokenize(m_mtmd_ctx, chunks, &input_text, bitmaps, 1);
+    mtmd_bitmap_free(bmp);
+
+    if (res != 0) {
+        LOGe("processImageAndText: mtmd_tokenize failed (%d)", res);
+        mtmd_input_chunks_free(chunks);
+        return "";
+    }
+
+    if (!hasContextHeadroom(512)) {
+        LOGw("processImageAndText: not enough context");
+        mtmd_input_chunks_free(chunks);
+        return "";
+    }
+
+    if (mtmd_helper_eval_chunks(m_mtmd_ctx, m_ctx, chunks, m_n_past, 0, 512, true, &m_n_past) != 0) {
+        LOGe("processImageAndText: mtmd_helper_eval_chunks failed");
+        mtmd_input_chunks_free(chunks);
+        return "";
+    }
+    mtmd_input_chunks_free(chunks);
+
+    LOGi("processImageAndText: evaluated, n_past=%d, generating...", (int)m_n_past);
+    return generateTokens(512, cb);
+}
+```
+
+#### New helper: `buildImageTurnPrompt()` — continuation only
+
+```cpp
+string LLMInference::buildImageTurnPrompt(const string& userPrompt, bool forReasoning) {
+    const char* marker = mtmd_default_marker();
+    string p;
+    p += TOK_IM_START; p += TOK_USER; p += "\n";
+    p += marker;
+    p += "\n";
+    p += userPrompt;
+    p += TOK_IM_END;   p += "\n";
+    p += TOK_IM_START; p += TOK_ASSISTANT;
+    if (forReasoning) p += TOK_THINK_START;  p += "\n";
+    return p;
+}
+```
+
 ### 3.3 JNI Bridge: `memelm.cpp`
 
 ```cpp
+// Text path — no forReasoning (baked into ChatML by Kotlin)
 JNIEXPORT void JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
     JNIEnv *env, jobject, jstring chatML, jboolean resetFirst, jobject tokenCallback) {
@@ -340,7 +438,7 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
     jmethodID onComplete = env->GetMethodID(cls, "onComplete", "()V");
 
     if (cb.onToken == nullptr) {
-        LOGe("GetMethodID failed — onToken not found on callback object");
+        LOGe("GetMethodID failed");
         env->ExceptionClear();
         return;
     }
@@ -349,22 +447,56 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
     const char *promptStr = env->GetStringUTFChars(chatML, nullptr);
     g_inference.processConversation(promptStr, resetFirst, &cb);
     env->ReleaseStringUTFChars(chatML, promptStr);
-    if (onComplete) {
-        env->CallVoidMethod(tokenCallback, onComplete);
+    if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
+}
+
+// Image path — needs forReasoning (C++ builds prompt with mtmd_default_marker)
+JNIEXPORT void JNICALL
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndTextV2(
+    JNIEnv *env, jobject, jobject bitmap,
+    jstring prompt, jboolean resetFirst, jboolean forReasoning, jobject tokenCallback) {
+
+    TokenCallback cb{};
+    jclass cls      = env->GetObjectClass(tokenCallback);
+    cb.env          = env;
+    cb.obj          = tokenCallback;
+    cb.onToken      = env->GetMethodID(cls, "onToken", "(Ljava/lang/String;)V");
+    jmethodID onComplete = env->GetMethodID(cls, "onComplete", "()V");
+
+    if (cb.onToken == nullptr) {
+        LOGe("GetMethodID failed");
+        env->ExceptionClear();
+        return;
     }
+    env->DeleteLocalRef(cls);
+
+    const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
+    g_inference.processImageAndText(env, bitmap, promptStr, resetFirst, forReasoning, &cb);
+    env->ReleaseStringUTFChars(prompt, promptStr);
+    if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
 }
 ```
+
+The old `nativeProcessTextOnly` and `nativeProcessImageAndText` (old signatures) remain for backward compat but become unused after migration.
 
 ### 3.4 Kotlin: `InferenceEngine` Interface
 
 ```kotlin
 interface InferenceEngine {
-    // ... existing methods ...
+    // ... existing methods unchanged ...
 
-    // NEW: Process a pre-formatted ChatML string.
-    // resetFirst=true for new conversations (clears KV cache).
-    // resetFirst=false for continuing existing conversation.
+    // NEW: Text-only with KV cache persistence.
+    // forReasoning NOT needed — ChatMLBuilder bakes <think> into the string.
     fun sendConversation(chatML: String, resetFirst: Boolean): Flow<Pair<STATE, String>>
+
+    // NEW: Image+text with KV cache persistence.
+    // forReasoning IS needed — C++ builds the prompt with mtmd_default_marker().
+    fun sendConversationWithImage(
+        bitmap: Bitmap,
+        message: String,
+        resetFirst: Boolean,
+        forReasoning: Boolean,
+    ): Flow<Pair<STATE, String>>
 }
 ```
 
@@ -378,84 +510,136 @@ external fun nativeProcessConversation(
     tokenCallback: StreamCallback,
 )
 
-override fun sendConversation(chatML: String, resetFirst: Boolean): Flow<Pair<STATE, String>> =
-    callbackFlow {
-        require(chatML.isNotEmpty()) { "ChatML cannot be empty" }
-        check(state.value.isModelLoaded) { "Model not ready" }
+@FastNative
+external fun nativeProcessImageAndTextV2(
+    bitmap: Bitmap,
+    prompt: String,
+    resetFirst: Boolean,
+    forReasoning: Boolean,
+    tokenCallback: StreamCallback,
+)
 
-        // Do NOT call nativeResetContext() here!
-        // resetFirst is handled inside native processConversation
-        _state.value = InferenceEngine.State.Generating
+override fun sendConversation(
+    chatML: String,
+    resetFirst: Boolean,
+): Flow<Pair<STATE, String>> = callbackFlow {
+    require(chatML.isNotEmpty()) { "ChatML cannot be empty" }
+    check(state.value.isModelLoaded) { "Model not ready" }
 
-        try {
-            var inThinking = true
-            val callback = object : StreamCallback {
-                override fun onToken(token: String) {
-                    when {
-                        inThinking && token.contains("</think>") -> {
-                            inThinking = false
-                        }
-                        inThinking -> trySend(Pair(STATE.THINKING, token))
-                        else -> trySend(Pair(STATE.ANSWER, token))
-                    }
-                }
-                override fun onComplete() {
-                    close()
+    _state.value = InferenceEngine.State.Generating
+    // nativeProcessConversation handles reset internally via resetFirst flag
+
+    try {
+        var inThinking = true
+        val callback = object : StreamCallback {
+            override fun onToken(token: String) {
+                when {
+                    inThinking && token.contains("</think>") -> inThinking = false
+                    inThinking -> trySend(Pair(STATE.THINKING, token))
+                    else -> trySend(Pair(STATE.ANSWER, token))
                 }
             }
-            nativeProcessConversation(chatML, resetFirst, callback)
-        } catch (e: CancellationException) {
-            _state.value = InferenceEngine.State.ModelReady
-            close()
-            throw e
-        } catch (e: Exception) {
-            _state.value = InferenceEngine.State.Error(e)
-            close(e)
-        } finally {
-            _state.value = InferenceEngine.State.ModelReady
-            close()
-            awaitClose()
+            override fun onComplete() { close() }
         }
-    }.flowOn(llamaDispatcher)
+        nativeProcessConversation(chatML, resetFirst, callback)
+    } catch (e: CancellationException) {
+        _state.value = InferenceEngine.State.ModelReady; close(); throw e
+    } catch (e: Exception) {
+        _state.value = InferenceEngine.State.Error(e); close(e)
+    } finally {
+        _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+    }
+}.flowOn(llamaDispatcher)
+
+override fun sendConversationWithImage(
+    bitmap: Bitmap,
+    message: String,
+    resetFirst: Boolean,
+    forReasoning: Boolean,
+): Flow<Pair<STATE, String>> = callbackFlow {
+    check(state.value.isModelLoaded) { "Model not ready" }
+
+    _state.value = InferenceEngine.State.Generating
+    val scaledBitmap = prepareImageForModel(bitmap)
+
+    try {
+        var inThinking = true
+        val callback = object : StreamCallback {
+            override fun onToken(token: String) {
+                when {
+                    inThinking && token.contains("</think>") -> inThinking = false
+                    inThinking -> trySend(Pair(STATE.THINKING, token))
+                    else -> trySend(Pair(STATE.ANSWER, token))
+                }
+            }
+            override fun onComplete() { close() }
+        }
+        nativeProcessImageAndTextV2(scaledBitmap, message, resetFirst, forReasoning, callback)
+    } catch (e: CancellationException) {
+        _state.value = InferenceEngine.State.ModelReady; close(); throw e
+    } catch (e: Exception) {
+        _state.value = InferenceEngine.State.Error(e); close(e)
+    } finally {
+        _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+    }
+}.flowOn(llamaDispatcher)
+
+
 ```
 
 ### 3.6 ChatML Builder Utility
 
 ```kotlin
-// In :app or :memelm module
 object ChatMLBuilder {
     private const val IM_START = "<|im_start|>"
     private const val IM_END = "<|im_end|>"
+    private const val THINK = "<think>\n"
 
-    fun build(
+    /**
+     * Build full ChatML for a new or reloaded conversation.
+     * Includes system prompt + full message history + assistant turn header.
+     * resetFirst=true should be used with this.
+     */
+    fun buildFull(
         systemPrompt: String,
-        messages: List<Pair<String, String>>,  // (role, content)
+        messages: List<Pair<String, String>>,
         forReasoning: Boolean = false,
     ): String {
         val sb = StringBuilder()
-
-        // System prompt
         if (systemPrompt.isNotBlank()) {
-            sb.append("$IM_START"system"\n")
+            sb.append("${IM_START}system\n")
             sb.append(systemPrompt)
             sb.append("$IM_END\n")
         }
-
-        // All messages
         for ((role, content) in messages) {
             sb.append("$IM_START$role\n")
             sb.append(content)
             sb.append("$IM_END\n")
         }
-
-        // Assistant turn (with optional think tag)
-        sb.append("$IM_START"assistant"\n")
-        if (forReasoning) sb.append("<think>\n")
-
+        sb.append("${IM_START}assistant\n")
+        if (forReasoning) sb.append(THINK)
         return sb.toString()
     }
 
-    fun buildFromHistory(
+    /**
+     * Build continuation turn snippet for ongoing conversation.
+     * Only the user turn + assistant header. NO system prompt, NO history.
+     * resetFirst=false should be used with this — KV cache already holds history.
+     */
+    fun buildTurn(
+        userMessage: String,
+        forReasoning: Boolean = false,
+    ): String {
+        val sb = StringBuilder()
+        sb.append("${IM_START}user\n")
+        sb.append(userMessage)
+        sb.append("$IM_END\n")
+        sb.append("${IM_START}assistant\n")
+        if (forReasoning) sb.append(THINK)
+        return sb.toString()
+    }
+
+    fun buildFullFromHistory(
         systemPrompt: String,
         history: List<ChatMessage>,
         forReasoning: Boolean = false,
@@ -467,7 +651,7 @@ object ChatMLBuilder {
                 ChatRole.System -> "system" to msg.text
             }
         }
-        return build(systemPrompt, messages, forReasoning)
+        return buildFull(systemPrompt, messages, forReasoning)
     }
 }
 ```
@@ -476,7 +660,20 @@ object ChatMLBuilder {
 
 ## Phase 4: ViewModel Integration (`ChatViewModel`)
 
-### 4.1 Inject `MemoryService`
+### 4.1 Updated `ChatUiState` — add `isThinking`
+
+```kotlin
+data class ChatUiState(
+    val isNewConversation: Boolean = true,
+    val isProcessing: Boolean = false,
+    val selectedImageUri: String? = null,
+    val error: String? = null,
+    val isRecording: Boolean = false,
+    val isThinkingEnabled: Boolean = false,   // NEW: reasoning toggle
+)
+```
+
+### 4.2 Injections
 
 ```kotlin
 @HiltViewModel
@@ -484,16 +681,17 @@ class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
     private val imageDecoder: ImageDecoder,
     private val inferenceEngine: InferenceEngine,
-    private val memoryService: MemoryService,        // NEW
-    private val messageDao: MessageDao,              // NEW
-    private val conversationDao: ConversationDao,    // NEW
+    private val memoryService: MemoryService,
+    private val messageDao: MessageDao,
+    private val conversationDao: ConversationDao,
 ) : BaseViewModel() {
 ```
 
-### 4.2 Modified `sendMessage`
+### 4.3 Modified `sendMessage`
 
 ```kotlin
 private var currentConversationId: String? = null
+private var currentConversationCreatedAt: Long = 0L
 
 fun sendMessage(message: String) {
     if (message.isBlank()) return
@@ -502,48 +700,34 @@ fun sendMessage(message: String) {
         return
     }
 
-    // 1. Get or create conversation
+    val imageUri = _uiState.value.selectedImageUri
+    val forReasoning = _uiState.value.isThinkingEnabled
+    val isNewConversation = currentConversationId == null
     val conversationId = currentConversationId ?: createNewConversation()
 
-    // 2. Apply Naive RAG
     safeViewModelScope.launch {
+        // 1. Naive RAG
         val augmentedInput = memoryService.augmentQuery(message)
-        Timber.d("NaiveRAG: input='$message' -> augmented='$augmentedInput'")
 
-        // 3. Build full ChatML from history + new input
-        val currentMessages = _messages.value.reversed() // list is reversed in UI
-        val chatML = ChatMLBuilder.buildFromHistory(
-            systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
-            history = currentMessages + ChatMessage(
-                id = UUID.randomUUID().toString(),
-                role = ChatRole.User,
-                text = augmentedInput,
-                timestamp = currentTime(),
-            ),
-            forReasoning = false,
-        )
-        val isNewConversation = currentConversationId == null
-        val resetFirst = isNewConversation
-
-        // 4. Save user message to Room
+        // 2. Save user message to Room
         val userMsgId = UUID.randomUUID().toString()
         messageDao.insert(MessageEntity(
             id = userMsgId,
             conversationId = conversationId,
             role = "User",
-            text = message,               // save original, not augmented
+            text = message,
             reasoning = "",
             timestamp = System.currentTimeMillis(),
-            imageUri = _uiState.value.selectedImageUri,
+            imageUri = imageUri,
         ))
 
-        // 5. Create in-memory messages for UI
+        // 3. Create in-memory messages for UI
         val userMessage = ChatMessage(
             id = userMsgId,
             role = ChatRole.User,
             text = message,
             timestamp = currentTime(),
-            imageUri = _uiState.value.selectedImageUri,
+            imageUri = imageUri,
         )
         val assistantId = UUID.randomUUID().toString()
         val assistantMessage = ChatMessage(
@@ -556,20 +740,39 @@ fun sendMessage(message: String) {
         _messages.update { listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
 
-        // 6. Send to inference engine (with KV cache persistence)
+        // 4. Send to inference engine
         var responseText = ""
-        inferenceEngine.sendConversation(chatML, resetFirst).collect { (state, token) ->
-            when (state) {
-                STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
-                STATE.ANSWER -> {
-                    appendToAssistant(assistantId, token)
-                    responseText += token
-                }
-                STATE.FINISH -> { /* handled in finally */ }
+        if (imageUri == null) {
+            // Text-only: build ChatML based on conversation state
+            val chatML = if (isNewConversation) {
+                val history = _messages.value.reversed() // newest last for history
+                ChatMLBuilder.buildFullFromHistory(
+                    systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
+                    history = history.map { it.toChatMessage() },
+                    forReasoning = forReasoning,
+                )
+            } else {
+                // Continuation: KV cache holds the rest
+                ChatMLBuilder.buildTurn(
+                    userMessage = augmentedInput,
+                    forReasoning = forReasoning,
+                )
             }
+            inferenceEngine.sendConversation(chatML, resetFirst = isNewConversation)
+                .collect { (state, token) -> handleToken(state, token, assistantId, responseText) }
+        } else {
+            // Image: always a new visual context
+            val bitmap = withContext(Dispatchers.IO) {
+                imageDecoder.decode(imageUri.toUri())
+            }
+            inferenceEngine.sendConversationWithImage(
+                bitmap, augmentedInput,
+                resetFirst = isNewConversation,
+                forReasoning = forReasoning,
+            ).collect { (state, token) -> handleToken(state, token, assistantId, responseText) }
         }
 
-        // 7. Save assistant response to Room
+        // 5. Save assistant response to Room
         val finalMsg = _messages.value.find { it.id == assistantId }
         messageDao.insert(MessageEntity(
             id = assistantId,
@@ -580,8 +783,8 @@ fun sendMessage(message: String) {
             timestamp = System.currentTimeMillis(),
         ))
 
-        // 8. Update conversation preview
-        conversationDao.upsert(ConversationEntity(
+        // 6. Update conversation preview
+        conversationDao.insert(ConversationEntity(
             id = conversationId,
             title = message.take(50),
             preview = responseText.take(80),
@@ -593,45 +796,65 @@ fun sendMessage(message: String) {
     }
 }
 
-private var currentConversationCreatedAt: Long = 0L
-
-private fun createNewConversation(): String {
-    val id = UUID.randomUUID().toString()
-    currentConversationId = id
-    currentConversationCreatedAt = System.currentTimeMillis()
-    return id
+// Delegate token handling to avoid duplication
+private fun handleToken(state: STATE, token: String, assistantId: String, responseText: String) {
+    when (state) {
+        STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
+        STATE.ANSWER -> {
+            appendToAssistant(assistantId, token)
+            responseText += token
+        }
+        STATE.FINISH -> { }
+    }
 }
 ```
 
-### 4.3 Load conversation from Room
+### 4.4 Reasoning Toggle
+
+```kotlin
+// In ChatViewModel
+fun toggleThinking() {
+    _uiState.update { it.copy(isThinkingEnabled = !it.isThinkingEnabled) }
+    Timber.d("Reasoning mode: ${_uiState.value.isThinkingEnabled}")
+}
+```
+
+### 4.5 Wire reasoning toggle in UI (`ChatScreen.kt`)
+
+In the `InputBar` or toolbar area, add a toggle button:
+
+```kotlin
+// Alongside the model name button
+ModelButton(
+    onClick = { viewModel.toggleThinking() },
+    icon = if (uiState.isThinkingEnabled) Icons.Filled.Psychology else Icons.Outlined.Psychology,
+    text = if (uiState.isThinkingEnabled) "Thinking ON" else "Thinking OFF",
+    isHighlight = uiState.isThinkingEnabled,
+)
+```
+
+Update `ChatUiState` consumption in `ChatScreen` to wire `isThinkingEnabled`.
+
+### 4.6 Load conversation from Room
 
 ```kotlin
 fun loadConversation(conversationId: String) {
     safeViewModelScope.launch {
         currentConversationId = conversationId
+        val conv = conversationDao.getConversation(conversationId)
+        if (conv == null) return@launch
+        currentConversationCreatedAt = conv.createdAt
         _uiState.update { it.copy(isNewConversation = false) }
 
-        val messages = messageDao.getMessagesOnce(conversationId)
-        // Reverse for UI order (newest first)
+        val messages = messageDao.getMessages(conversationId)
         _messages.value = messages.reversed().map { it.toChatMessage() }
     }
 }
-
-// Extension to convert MessageEntity -> ChatMessage
-fun MessageEntity.toChatMessage() = ChatMessage(
-    id = id,
-    role = ChatRole.valueOf(role),
-    text = text,
-    timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp)),
-    imageUri = imageUri,
-    reasoning = reasoning,
-)
 ```
 
-### 4.4 Wire conversation list drawer
+### 4.7 Wire conversation list drawer
 
 ```kotlin
-// In ChatViewModel
 val conversations: StateFlow<List<DummyConversation>> =
     conversationDao.getAllConversations().map { entities ->
         entities.map { entity ->
@@ -639,15 +862,15 @@ val conversations: StateFlow<List<DummyConversation>> =
                 id = entity.id,
                 title = entity.title,
                 preview = entity.preview,
-                time = formatTime(entity.updatedAt),
+                time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(entity.updatedAt)),
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 ```
 
-Update `ChatScreen` to pass `viewModel.conversations` instead of the empty `dummyConversations`.
+Update `ChatScreen` to wire `viewModel.conversations` instead of `dummyConversations`.
 
-### 4.5 `startNewConversation` updated
+### 4.8 `startNewConversation` updated
 
 ```kotlin
 fun startNewConversation() {
@@ -662,17 +885,99 @@ fun startNewConversation() {
 
 ---
 
-## Phase 5: Remove `nativeResetContext()` from `sendUserPrompt`
+## Phase 5: Migration Path
 
-The existing `sendUserPrompt` (used for image+text) still calls `nativeResetContext()`. That's acceptable for the image case since multimodal conversations are single-turn. But for the text-only path, `sendConversation` must be used instead, and the old `sendUserPrompt` must NOT be called for text messages.
+1. Add `processConversation()` + updated `processImageAndText()` to C++ (`LLMInference.h/.cpp`)
+2. Add `nativeProcessConversation` + `nativeProcessImageAndTextV2` JNI methods in `memelm.cpp`
+3. Add `sendConversation()` + `sendConversationWithImage()` to `InferenceEngine` interface
+4. Implement both in `InferenceEngineImpl` with new JNI externals
+5. Add `ChatMLBuilder` utility (in `:app` or `:memelm`)
+6. Update `ChatViewModel.sendMessage()` to use new API
+7. Add `isThinkingEnabled` to `ChatUiState`, wire toggle in `ChatScreen`
+8. Update `ChatScreen` to wire conversation list from Room data
 
-### Migration path
+Old `sendUserPrompt()` and `sendUserPromptWithImage()` remain for backward compat but become unused after migration. Similarly `nativeProcessTextOnly`, `nativeProcessImageAndText` (old signatures) remain in JNI.
 
-1. Add `sendConversation()` to `InferenceEngine` interface + impl
-2. Add `nativeProcessConversation()` to JNI + C++
-3. Update `ChatViewModel.sendMessage()` to use `sendConversation()` instead of `sendUserPrompt()`
-4. Keep `sendUserPrompt` / `sendUserPromptWithImage` for backward compatibility (image use case)
-5. Remove the `nativeResetContext()` call from `sendUserPrompt` in `InferenceEngineImpl` (or keep it — only used for images now)
+---
+
+## Data Flow Examples
+
+### New text conversation
+
+```
+User types "what is a meme?"  (thinking=OFF)
+  │
+  ├─ MemoryService.augmentQuery — finds no good match, returns original
+  │
+  ├─ ChatMLBuilder.buildFull()
+  │   <|im_start|>system
+  │   You are Aoi...
+  │   <|im_end|>
+  │   <|im_start|>user
+  │   what is a meme?
+  │   <|im_end|>
+  │   <|im_start|>assistant
+  │
+  ├─ sendConversation(chatML, resetFirst=true)
+  │   └─ C++: resetContext → tokenize → eval → generate → advance m_n_past
+
+
+  └─ Save to Room
+```
+
+### Continuing same conversation
+
+```
+User types "explain further"  (thinking=ON)
+  │
+  ├─ MemoryService.augmentQuery — match found? augment.
+  │
+  ├─ ChatMLBuilder.buildTurn("explain further", forReasoning=true)
+  │   <|im_start|>user
+  │   explain further
+  │   <|im_end|>
+  │   <|im_start|>assistant
+  │   <think>
+  │
+  ├─ sendConversation(turnSnippet, resetFirst=false)
+  │   └─ C++: NO reset → tokenize → eval → generate (KV cache has prior turns)
+  │
+  └─ Save to Room
+```
+
+### New image conversation
+
+```
+User sends image + "what is this?"  (thinking=OFF)
+  │
+  ├─ sendConversationWithImage(bitmap, prompt, resetFirst=true, forReasoning=false)
+  │   └─ C++: resetContext → buildImagePrompt(system + image + text)
+  │         → mtmd_tokenize → eval → generate → advance m_n_past
+  │
+  └─ Save to Room
+```
+
+### Reloading saved conversation + continuing
+
+```
+User opens saved conversation from drawer
+  │
+  ├─ loadConversation("conv-123")
+  │   ├─ messageDao.getMessages → reconstruct in-memory list
+  │   └─ _messages.value = reversed list for UI
+  │
+User types "tell me more"  (thinking=ON)
+  │
+  ├─ isNewConversation = false, but this is a reload from DB
+  │   → KV cache is empty → need full re-send = resetFirst=true
+  │
+  ├─ ChatMLBuilder.buildFullFromHistory(system, allMessages + newUserMsg, forReasoning=true)
+  │
+  ├─ sendConversation(fullChatML, resetFirst=true)
+  │   └─ C++: resetContext → full re-tokenize → eval → generate
+  │
+  └─ Save to Room
+```
 
 ---
 
@@ -689,50 +994,17 @@ The existing `sendUserPrompt` (used for image+text) still calls `nativeResetCont
 | `local/.../data/AppDatabase.kt` | Room database class |
 | `local/.../di/DatabaseModule.kt` | Hilt module for Room |
 | `local/.../service/MemoryService.kt` | Naive RAG (keyword + cosine similarity) |
-| `memelm/../inference/ChatMLBuilder.kt` | ChatML formatting utility |
+| `app/.../ChatMLBuilder.kt` | ChatML formatting utility |
 
 ### Modified files
 
 | File | Change |
 |------|--------|
-| `memelm/.../LLMInference.h` | Add `processConversation()` declaration |
-| `memelm/.../LLMInference.cpp` | Add `processConversation()` implementation |
-| `memelm/.../memelm.cpp` | Add `nativeProcessConversation` JNI bridge |
-| `memelm/.../InferenceEngine.kt` | Add `sendConversation()` to interface |
-| `memelm/.../InferenceEngineImpl.kt` | Implement `sendConversation()`, add JNI external |
-| `app/.../ChatViewModel.kt` | Inject `MemoryService`, Room DAOs; rewrite `sendMessage` |
-| `app/.../ChatScreen.kt` | Wire conversation list from ViewModel flow |
-
----
-
-## Data Flow (after changes)
-
-```
-User types "what is a meme?"
-  │
-  ├─ 1. MemoryService.augmentQuery("what is a meme?")
-  │     ├─ tokenize -> {what:1, is:1, a:1, meme:1}
-  │     ├─ intersect with all user messages in Room
-  │     ├─ best match: "memes are funny" (keywords: meme, match=1)
-  │     └─ quality gate: 1 < MIN_KEYWORD_MATCH=2 → fallback
-  │
-  ├─ 2. augmentedInput = "what is a meme?"  (unchanged)
-  │
-  ├─ 3. Build ChatML:
-  │     <|im_start|>system
-  │     You are Aoi...
-  │     <|im_end|>
-  │     <|im_start|>assistant
-  │     Hi there!<|im_end|>
-  │     <|im_start|>user
-  │     what is a meme?<|im_end|>
-  │     <|im_start|>assistant
-  │
-  ├─ 4. sendConversation(chatML, resetFirst=false)
-  │     └─ C++: append to KV cache (m_n_past continues)
-  │           └─ generate tokens
-  │
-  ├─ 5. Save user + assistant messages to Room
-  │
-  └─ 6. Update conversation preview in Room
-```
+| `memelm/.../LLMInference.h` | Add `processConversation()`, update `processImageAndText()` signature |
+| `memelm/.../LLMInference.cpp` | Add `processConversation()`, `buildImageTurnPrompt()`, update `processImageAndText()` |
+| `memelm/.../memelm.cpp` | Add JNI for new native methods |
+| `memelm/.../InferenceEngine.kt` | Add `sendConversation()`, `sendConversationWithImage()` |
+| `memelm/.../InferenceEngineImpl.kt` | Implement new methods, add JNI externals |
+| `app/.../ChatViewModel.kt` | Inject MemoryService + DAOs, rewrite sendMessage, add toggleThinking |
+| `app/.../model/AppModels.kt` | Add `isThinkingEnabled` to `ChatUiState` |
+| `app/.../ui/screen/ChatScreen.kt` | Wire conversation list, add reasoning toggle button |
