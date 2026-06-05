@@ -149,6 +149,8 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val currentConversationId by viewModel.currentConversationId.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -168,13 +170,16 @@ fun ChatScreen(
         drawerState = drawerState,
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
-        conversations = viewModel.dummyConversations,
-        selectedConversationId = "none", // Haven't implemented conversation switching yet
+        conversations = conversations,
+        selectedConversationId = currentConversationId ?: "",
         onNewChat = {
             scope.launch { drawerState.close() }
             viewModel.startNewConversation()
         },
-        onSelectConversation = {},
+        onSelectConversation = { id ->
+            scope.launch { drawerState.close() }
+            viewModel.loadConversation(id)
+        },
         onAttach = {
             galleryLauncher.launch(
                 PickVisualMediaRequest(

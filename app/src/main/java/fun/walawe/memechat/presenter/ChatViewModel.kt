@@ -20,17 +20,19 @@ import `fun`.walawe.memelm.inference.InferenceParams
 import `fun`.walawe.memelm.inference.STATE
 import `fun`.walawe.memelm.inference.isUninterruptible
 import `fun`.walawe.modelpull.model.CacheKey
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
@@ -59,11 +61,22 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
-    val dummyConversations =
-        listOf<DummyConversation>()
+    val conversations: StateFlow<List<DummyConversation>> =
+        conversationDao.getAllConversations().map { entities ->
+            entities.map { entity ->
+                DummyConversation(
+                    id = entity.id,
+                    title = entity.title,
+                    preview = entity.preview,
+                    time = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(entity.updatedAt)),
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private var currentConversationId: String? = null
+    private val _currentConversationId = MutableStateFlow<String?>(null)
+    val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
     private var currentConversationCreatedAt: Long = 0L
+    private var isKvCachePopulated = false
 
     init {
         safeViewModelScope.launch {
@@ -76,7 +89,32 @@ class ChatViewModel @Inject constructor(
             _messages.value = emptyList()
             _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
             inferenceEngine.cancelGeneration()
-            currentConversationId = null
+            _currentConversationId.value = null
+            isKvCachePopulated = false
+        }
+    }
+
+    fun loadConversation(conversationId: String) {
+        safeViewModelScope.launch {
+            _currentConversationId.value = conversationId
+            val conv = conversationDao.getConversation(conversationId) ?: return@launch
+            currentConversationCreatedAt = conv.createdAt
+            isKvCachePopulated = false
+            _uiState.update { it.copy(isNewConversation = false) }
+            _messages.value = messageDao.getMessages(conversationId).reversed().map { entity ->
+                ChatMessage(
+                    id = entity.id,
+                    role = when (entity.role) {
+                        "User" -> ChatRole.User
+                        "Assistant" -> ChatRole.Assistant
+                        else -> ChatRole.System
+                    },
+                    text = entity.text,
+                    timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(entity.timestamp)),
+                    imageUri = entity.imageUri,
+                    reasoning = entity.reasoning,
+                )
+            }
         }
     }
 
@@ -89,8 +127,8 @@ class ChatViewModel @Inject constructor(
 
         val imageUri = _uiState.value.selectedImageUri
         val forReasoning = _uiState.value.isThinkingEnabled
-        val isNewConversation = currentConversationId == null
-        val conversationId = currentConversationId ?: createNewConversation()
+        val isNewConversation = _currentConversationId.value == null
+        val conversationId = _currentConversationId.value ?: createNewConversation()
 
         safeViewModelScope.launch {
             val augmentedInput = memoryService.augmentQuery(message)
@@ -115,8 +153,9 @@ class ChatViewModel @Inject constructor(
             var responseText = ""
             val imageBitmap = imageUri?.let { withContext(Dispatchers.IO) { imageDecoder.decode(it.toUri()) } }
 
+            val resetFirst = !isKvCachePopulated
             val chatML = when {
-                imageBitmap == null && isNewConversation -> ChatMLBuilder.buildFullFromHistory(
+                imageBitmap == null && resetFirst -> ChatMLBuilder.buildFullFromHistory(
                     DEFAULT_MODEL_SYSTEM_PROMPT,
                     existingHistory.reversed() + userMessage,
                     forReasoning)
@@ -125,9 +164,9 @@ class ChatViewModel @Inject constructor(
             }
 
             val flow = if (imageBitmap != null) {
-                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, isNewConversation, forReasoning)
+                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
             } else {
-                inferenceEngine.sendConversation(chatML, isNewConversation)
+                inferenceEngine.sendConversation(chatML, resetFirst)
             }
             flow.collect { (state, token) ->
                 when (state) {
@@ -136,6 +175,7 @@ class ChatViewModel @Inject constructor(
                     STATE.FINISH -> { }
                 }
             }
+            isKvCachePopulated = true
 
             messageDao.insert(MessageEntity(
                 id = assistantId, conversationId = conversationId,
@@ -158,7 +198,7 @@ class ChatViewModel @Inject constructor(
     private fun createNewConversation(): String {
         val id = UUID.randomUUID().toString()
         currentConversationCreatedAt = System.currentTimeMillis()
-        currentConversationId = id
+        _currentConversationId.value = id
         return id
     }
 
