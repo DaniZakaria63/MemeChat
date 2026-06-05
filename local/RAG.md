@@ -477,7 +477,7 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndTextV2
 }
 ```
 
-The old `nativeProcessTextOnly` and `nativeProcessImageAndText` (old signatures) remain for backward compat but become unused after migration.
+Old `nativeProcessTextOnly`, `nativeProcessImageAndText` (3-param), `sendUserPrompt()`, and `sendUserPromptWithImage()` were fully removed — no backward compat stubs retained.
 
 ### 3.4 Kotlin: `InferenceEngine` Interface
 
@@ -706,105 +706,61 @@ fun sendMessage(message: String) {
     val conversationId = currentConversationId ?: createNewConversation()
 
     safeViewModelScope.launch {
-        // 1. Naive RAG
         val augmentedInput = memoryService.augmentQuery(message)
-
-        // 2. Save user message to Room
         val userMsgId = UUID.randomUUID().toString()
+        val assistantId = UUID.randomUUID().toString()
+
         messageDao.insert(MessageEntity(
-            id = userMsgId,
-            conversationId = conversationId,
-            role = "User",
-            text = message,
-            reasoning = "",
-            timestamp = System.currentTimeMillis(),
-            imageUri = imageUri,
+            id = userMsgId, conversationId = conversationId,
+            role = "User", text = message, reasoning = "",
+            timestamp = System.currentTimeMillis(), imageUri = imageUri,
         ))
 
-        // 3. Create in-memory messages for UI
-        val userMessage = ChatMessage(
-            id = userMsgId,
-            role = ChatRole.User,
-            text = message,
-            timestamp = currentTime(),
-            imageUri = imageUri,
-        )
-        val assistantId = UUID.randomUUID().toString()
-        val assistantMessage = ChatMessage(
-            id = assistantId,
-            role = ChatRole.Assistant,
-            text = "",
-            timestamp = "",
-            isStreaming = true,
-        )
+        val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
+            text = message, timestamp = currentTime(), imageUri = imageUri)
+        val assistantMessage = ChatMessage(id = assistantId, role = ChatRole.Assistant,
+            text = "", timestamp = "", isStreaming = true)
         _messages.update { listOf(assistantMessage, userMessage) + it }
         _uiState.update { it.copy(isNewConversation = false) }
 
-        // 4. Send to inference engine
         var responseText = ""
-        if (imageUri == null) {
-            // Text-only: build ChatML based on conversation state
-            val chatML = if (isNewConversation) {
-                val history = _messages.value.reversed() // newest last for history
-                ChatMLBuilder.buildFullFromHistory(
-                    systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
-                    history = history.map { it.toChatMessage() },
-                    forReasoning = forReasoning,
-                )
-            } else {
-                // Continuation: KV cache holds the rest
-                ChatMLBuilder.buildTurn(
-                    userMessage = augmentedInput,
-                    forReasoning = forReasoning,
-                )
-            }
-            inferenceEngine.sendConversation(chatML, resetFirst = isNewConversation)
-                .collect { (state, token) -> handleToken(state, token, assistantId, responseText) }
-        } else {
-            // Image: always a new visual context
-            val bitmap = withContext(Dispatchers.IO) {
-                imageDecoder.decode(imageUri.toUri())
-            }
-            inferenceEngine.sendConversationWithImage(
-                bitmap, augmentedInput,
-                resetFirst = isNewConversation,
-                forReasoning = forReasoning,
-            ).collect { (state, token) -> handleToken(state, token, assistantId, responseText) }
+        val imageBitmap = imageUri?.let { withContext(Dispatchers.IO) { imageDecoder.decode(it.toUri()) } }
+
+        val chatML = when {
+            imageBitmap == null && isNewConversation -> ChatMLBuilder.buildFullFromHistory(
+                DEFAULT_MODEL_SYSTEM_PROMPT, _messages.value.reversed(), forReasoning)
+            imageBitmap == null -> ChatMLBuilder.buildTurn(augmentedInput, forReasoning)
+            else -> ""
         }
 
-        // 5. Save assistant response to Room
-        val finalMsg = _messages.value.find { it.id == assistantId }
+        val flow = if (imageBitmap != null) {
+            inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, isNewConversation, forReasoning)
+        } else {
+            inferenceEngine.sendConversation(chatML, isNewConversation)
+        }
+        flow.collect { (state, token) ->
+            when (state) {
+                STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
+                STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
+                STATE.FINISH -> { }
+            }
+        }
+
         messageDao.insert(MessageEntity(
-            id = assistantId,
-            conversationId = conversationId,
-            role = "Assistant",
-            text = responseText,
-            reasoning = finalMsg?.reasoning ?: "",
+            id = assistantId, conversationId = conversationId,
+            role = "Assistant", text = responseText,
+            reasoning = _messages.value.find { it.id == assistantId }?.reasoning ?: "",
             timestamp = System.currentTimeMillis(),
         ))
 
-        // 6. Update conversation preview
         conversationDao.insert(ConversationEntity(
-            id = conversationId,
-            title = message.take(50),
+            id = conversationId, title = message.take(50),
             preview = responseText.take(80),
             updatedAt = System.currentTimeMillis(),
             createdAt = if (isNewConversation) System.currentTimeMillis() else currentConversationCreatedAt,
         ))
 
         finishAssistantStream(assistantId)
-    }
-}
-
-// Delegate token handling to avoid duplication
-private fun handleToken(state: STATE, token: String, assistantId: String, responseText: String) {
-    when (state) {
-        STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
-        STATE.ANSWER -> {
-            appendToAssistant(assistantId, token)
-            responseText += token
-        }
-        STATE.FINISH -> { }
     }
 }
 ```
@@ -896,7 +852,7 @@ fun startNewConversation() {
 7. Add `isThinkingEnabled` to `ChatUiState`, wire toggle in `ChatScreen`
 8. Update `ChatScreen` to wire conversation list from Room data
 
-Old `sendUserPrompt()` and `sendUserPromptWithImage()` remain for backward compat but become unused after migration. Similarly `nativeProcessTextOnly`, `nativeProcessImageAndText` (old signatures) remain in JNI.
+Old `sendUserPrompt()`, `sendUserPromptWithImage()`, `nativeProcessTextOnly`, and the 3-param `nativeProcessImageAndText` were fully removed — no backward compat stubs retained.
 
 ---
 

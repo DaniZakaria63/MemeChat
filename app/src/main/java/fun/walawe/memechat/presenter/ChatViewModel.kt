@@ -4,6 +4,12 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
+import `fun`.walawe.local.data.ConversationDao
+import `fun`.walawe.local.data.ConversationEntity
+import `fun`.walawe.local.data.MessageDao
+import `fun`.walawe.local.data.MessageEntity
+import `fun`.walawe.local.service.MemoryService
+import `fun`.walawe.memechat.data.ChatMLBuilder
 import `fun`.walawe.memechat.data.ImageDecoder
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
@@ -34,6 +40,9 @@ class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
     private val imageDecoder: ImageDecoder,
     private val inferenceEngine: InferenceEngine,
+    private val memoryService: MemoryService,
+    private val messageDao: MessageDao,
+    private val conversationDao: ConversationDao,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.UnloadingModel).also { flow ->
@@ -53,17 +62,21 @@ class ChatViewModel @Inject constructor(
     val dummyConversations =
         listOf<DummyConversation>()
 
+    private var currentConversationId: String? = null
+    private var currentConversationCreatedAt: Long = 0L
+
     init {
         safeViewModelScope.launch {
             prepareModel()
         }
     }
 
-    fun startNewConversation(){
+    fun startNewConversation() {
         safeViewModelScope.launch {
             _messages.value = emptyList()
             _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
             inferenceEngine.cancelGeneration()
+            currentConversationId = null
         }
     }
 
@@ -73,69 +86,80 @@ class ChatViewModel @Inject constructor(
             postError("Model is not ready yet")
             return
         }
+
         val imageUri = _uiState.value.selectedImageUri
-        val userMessage = ChatMessage(
-            id = UUID.randomUUID().toString(),
-            role = ChatRole.User,
-            text = message,
-            timestamp = currentTime(),
-            imageUri = imageUri,
-        )
+        val forReasoning = _uiState.value.isThinkingEnabled
+        val isNewConversation = currentConversationId == null
+        val conversationId = currentConversationId ?: createNewConversation()
 
-        val assistantId = UUID.randomUUID().toString()
-        val assistantMessage = ChatMessage(
-            id = assistantId,
-            role = ChatRole.Assistant,
-            text = "",
-            timestamp = "",
-            isStreaming = true,
-        )
+        safeViewModelScope.launch {
+            val augmentedInput = memoryService.augmentQuery(message)
+            val userMsgId = UUID.randomUUID().toString()
+            val assistantId = UUID.randomUUID().toString()
 
-        _messages.update {  listOf(assistantMessage, userMessage) + it }
-        _uiState.update { it.copy(isNewConversation = false) }
+            messageDao.insert(MessageEntity(
+                id = userMsgId, conversationId = conversationId,
+                role = "User", text = message, reasoning = "",
+                timestamp = System.currentTimeMillis(), imageUri = imageUri,
+            ))
 
-        viewModelScope.launch {
-            try {
-                if(_uiState.value.selectedImageUri == null){
-                    inferenceEngine.sendUserPrompt(message).collect { (state, token) ->
-                        when(state){
-                            is STATE.THINKING -> {
-                                appendReasoningToAssistant(assistantId, token)
-                            }
-                            is STATE.ANSWER -> {
-                                appendToAssistant(assistantId, token)
-                            }
-                            is STATE.FINISH -> {
-                                finishAssistantStream(assistantId)
-                            }
-                        }
-                    }
-                }else{
-                    val bitmap = withContext(Dispatchers.IO) {
-                        imageDecoder.decode(imageUri!!.toUri())
-                    }
-                    inferenceEngine.sendUserPromptWithImage(bitmap, message).collect { (state, token) ->
-                        when(state){
-                            is STATE.THINKING -> {
-                                appendReasoningToAssistant(assistantId, token)
-                            }
-                            is STATE.ANSWER -> {
-                                appendToAssistant(assistantId, token)
-                            }
-                            is STATE.FINISH -> {
-                                finishAssistantStream(assistantId)
-                            }
-                        }
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                postError(e.message ?: "Generation failed")
-            } finally {
-                finishAssistantStream(assistantId)
+            val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
+                text = message, timestamp = currentTime(), imageUri = imageUri)
+            val assistantMessage = ChatMessage(id = assistantId, role = ChatRole.Assistant,
+                text = "", timestamp = "", isStreaming = true)
+
+            val existingHistory = _messages.value.toList()
+            _messages.update { listOf(assistantMessage, userMessage) + it }
+            _uiState.update { it.copy(isNewConversation = false) }
+
+            var responseText = ""
+            val imageBitmap = imageUri?.let { withContext(Dispatchers.IO) { imageDecoder.decode(it.toUri()) } }
+
+            val chatML = when {
+                imageBitmap == null && isNewConversation -> ChatMLBuilder.buildFullFromHistory(
+                    DEFAULT_MODEL_SYSTEM_PROMPT,
+                    existingHistory.reversed() + userMessage,
+                    forReasoning)
+                imageBitmap == null -> ChatMLBuilder.buildTurn(augmentedInput, forReasoning)
+                else -> ""
             }
+
+            val flow = if (imageBitmap != null) {
+                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, isNewConversation, forReasoning)
+            } else {
+                inferenceEngine.sendConversation(chatML, isNewConversation)
+            }
+            flow.collect { (state, token) ->
+                when (state) {
+                    STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
+                    STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
+                    STATE.FINISH -> { }
+                }
+            }
+
+            messageDao.insert(MessageEntity(
+                id = assistantId, conversationId = conversationId,
+                role = "Assistant", text = responseText,
+                reasoning = _messages.value.find { it.id == assistantId }?.reasoning ?: "",
+                timestamp = System.currentTimeMillis(),
+            ))
+
+            conversationDao.insert(ConversationEntity(
+                id = conversationId, title = message.take(50),
+                preview = responseText.take(80),
+                updatedAt = System.currentTimeMillis(),
+                createdAt = if (isNewConversation) System.currentTimeMillis() else currentConversationCreatedAt,
+            ))
+
+            finishAssistantStream(assistantId)
         }
+    }
+
+    private fun createNewConversation(): String {
+        val id = UUID.randomUUID().toString()
+        currentConversationCreatedAt = System.currentTimeMillis()
+        currentConversationId = id
+        return id
     }
 
     override fun onCleared() {
@@ -184,7 +208,7 @@ class ChatViewModel @Inject constructor(
     private fun appendReasoningToAssistant(id: String, token: String) =
         updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
 
-    private fun finishAssistantStream(id: String) =
+    fun finishAssistantStream(id: String) =
         updateAssistantMessage(id) { it.copy(isStreaming = false, timestamp = currentTime()) }
 
     fun setSelectedImageUri(uri: String?) {
