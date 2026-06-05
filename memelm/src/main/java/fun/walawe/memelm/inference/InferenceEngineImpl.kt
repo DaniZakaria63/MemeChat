@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,7 +101,6 @@ class InferenceEngineImpl private constructor(
     @FastNative
     external fun nativeIsGenerating(): Boolean
 
-    val channel = Channel<String>(capacity = Channel.UNLIMITED)
     private val _state =
         MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized)
     override val state = _state.asStateFlow()
@@ -207,6 +205,7 @@ class InferenceEngineImpl private constructor(
     override fun sendConversation(
         chatML: String,
         resetFirst: Boolean,
+        forReasoning: Boolean,
     ): Flow<Pair<STATE, String>> = callbackFlow {
         require(chatML.isNotEmpty()) { "User prompt cannot be empty" }
         check(state.value.isModelLoaded) { "Model not ready" }
@@ -214,13 +213,22 @@ class InferenceEngineImpl private constructor(
         _state.value = InferenceEngine.State.Generating
 
         try {
-            var inThinking = true
             val callback = object : StreamCallback {
+                var thinkingSeen = forReasoning
                 override fun onToken(token: String) {
                     when {
-                        inThinking && token.contains("</think>") -> inThinking = false
-                        inThinking -> trySend(Pair(STATE.THINKING, token))
-                        else -> trySend(Pair(STATE.ANSWER, token))
+                        !thinkingSeen && token.contains("<think>") -> {
+                            thinkingSeen = true
+                            val after = token.substringAfter("<think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.THINKING, after))
+                        }
+                        !thinkingSeen -> trySend(Pair(STATE.ANSWER, token))
+                        !token.contains("</think>") -> trySend(Pair(STATE.THINKING, token))
+                        else -> {
+                            thinkingSeen = false
+                            val after = token.substringAfter("</think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.ANSWER, after))
+                        }
                     }
                 }
                 override fun onComplete() { close() }
@@ -247,13 +255,22 @@ class InferenceEngineImpl private constructor(
         val scaledBitmap = prepareImageForModel(bitmap)
 
         try {
-            var inThinking = true
             val callback = object : StreamCallback {
+                var thinkingSeen = forReasoning
                 override fun onToken(token: String) {
                     when {
-                        inThinking && token.contains("</think>") -> inThinking = false
-                        inThinking -> trySend(Pair(STATE.THINKING, token))
-                        else -> trySend(Pair(STATE.ANSWER, token))
+                        !thinkingSeen && token.contains("<think>") -> {
+                            thinkingSeen = true
+                            val after = token.substringAfter("<think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.THINKING, after))
+                        }
+                        !thinkingSeen -> trySend(Pair(STATE.ANSWER, token))
+                        !token.contains("</think>") -> trySend(Pair(STATE.THINKING, token))
+                        else -> {
+                            thinkingSeen = false
+                            val after = token.substringAfter("</think>")
+                            if (after.isNotEmpty()) trySend(Pair(STATE.ANSWER, after))
+                        }
                     }
                 }
                 override fun onComplete() { close() }
@@ -280,19 +297,6 @@ class InferenceEngineImpl private constructor(
         cancelGeneration()
         llamaScope.cancel()
         Log.i(TAG, "Inference engine destroyed")
-    }
-
-    private fun parseReasoningAndResponse(fullOutput: String): Pair<String, String?> {
-        val thinkStart = fullOutput.indexOf("<think>")
-        val thinkEnd = fullOutput.indexOf("</think>")
-
-        return if (thinkStart != -1 && thinkEnd != -1) {
-            val reasoning = fullOutput.substring(thinkStart + 7, thinkEnd).trim()
-            val answer = fullOutput.substring(thinkEnd + 8).trim()
-            answer to reasoning
-        } else {
-            fullOutput to null
-        }
     }
 
     private fun prepareImageForModel(bitmap: Bitmap): Bitmap {

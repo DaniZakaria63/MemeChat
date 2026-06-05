@@ -20,6 +20,9 @@ interface ConversationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(conversation: ConversationEntity)
 
+    @Query("UPDATE conversations SET title = :title, preview = :preview, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun update(id: String, title: String, preview: String, updatedAt: Long)
+
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun delete(id: String)
 }

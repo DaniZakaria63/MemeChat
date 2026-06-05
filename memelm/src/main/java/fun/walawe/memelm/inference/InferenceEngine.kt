@@ -12,7 +12,7 @@ interface InferenceEngine {
 
     suspend fun setSystemPrompt(systemPrompt: String)
 
-    fun sendConversation(chatML: String, resetFirst: Boolean): Flow<Pair<STATE, String>>
+    fun sendConversation(chatML: String, resetFirst: Boolean, forReasoning: Boolean = false): Flow<Pair<STATE, String>>
 
     fun sendConversationWithImage(
         bitmap: Bitmap,
@@ -96,5 +96,4 @@ interface StreamCallback {
 sealed class STATE{
     object THINKING: STATE()
     object ANSWER: STATE()
-    object FINISH: STATE()
 }

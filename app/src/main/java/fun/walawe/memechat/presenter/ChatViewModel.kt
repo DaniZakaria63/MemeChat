@@ -39,6 +39,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltViewModel
@@ -52,7 +53,7 @@ class ChatViewModel @Inject constructor(
     private val imageStore: ImageStore,
 ) : BaseViewModel() {
 
-    private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.UnloadingModel).also { flow ->
+    private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized).also { flow ->
         safeViewModelScope.launch {
             inferenceEngine.state.collect{flow.emit(it)}
         }
@@ -104,13 +105,20 @@ class ChatViewModel @Inject constructor(
     }
 
     fun loadConversation(conversationId: String) {
+        Timber.d("loadConversation: start id=$conversationId")
         safeViewModelScope.launch {
             _currentConversationId.value = conversationId
-            val conv = conversationDao.getConversation(conversationId) ?: return@launch
+            val conv = conversationDao.getConversation(conversationId)
+            if (conv == null) {
+                Timber.w("loadConversation: conversation not found $conversationId")
+                return@launch
+            }
             currentConversationCreatedAt = conv.createdAt
             isKvCachePopulated = false
             _uiState.update { it.copy(isNewConversation = false) }
-            _messages.value = messageDao.getMessages(conversationId).reversed().map { entity ->
+            val entities = messageDao.getMessages(conversationId)
+            Timber.d("loadConversation: got ${entities.size} entities from Room for $conversationId")
+            val loaded = entities.reversed().map { entity ->
                 val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
                     id = entity.id,
@@ -125,6 +133,8 @@ class ChatViewModel @Inject constructor(
                     reasoning = entity.reasoning,
                 )
             }
+            Timber.d("loadConversation: mapped ${loaded.size} messages, setting _messages")
+            _messages.update { loaded }
         }
     }
 
@@ -206,16 +216,15 @@ class ChatViewModel @Inject constructor(
                 else -> ""
             }
 
-            val flow = if (imageBitmap != null) {
+            val outputFlow = if (imageBitmap != null) {
                 inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
             } else {
-                inferenceEngine.sendConversation(chatML, resetFirst)
+                inferenceEngine.sendConversation(chatML, resetFirst, forReasoning)
             }
-            flow.collect { (state, token) ->
+            outputFlow.collect { (state, token) ->
                 when (state) {
                     STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
                     STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
-                    STATE.FINISH -> { }
                 }
             }
             isKvCachePopulated = true
@@ -227,12 +236,12 @@ class ChatViewModel @Inject constructor(
                 timestamp = System.currentTimeMillis(),
             ))
 
-            conversationDao.insert(ConversationEntity(
+            conversationDao.update(
                 id = conversationId, title = message.take(50),
                 preview = responseText.take(80),
                 updatedAt = System.currentTimeMillis(),
-                createdAt = currentConversationCreatedAt,
-            ))
+            )
+            Timber.d("sendMessage: saved assistant msg + updated conversation $conversationId")
 
             finishAssistantStream(assistantId)
         }
@@ -296,6 +305,11 @@ class ChatViewModel @Inject constructor(
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }
+    }
+
+    fun toggleThinking() {
+        _uiState.update { it.copy(isThinkingEnabled = !it.isThinkingEnabled) }
+        Timber.d("Reasoning mode: ${_uiState.value.isThinkingEnabled}")
     }
 
     private fun postError(message: String) {
