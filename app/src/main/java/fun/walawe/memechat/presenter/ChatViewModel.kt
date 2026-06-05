@@ -167,6 +167,15 @@ class ChatViewModel @Inject constructor(
                 return@launch
             }
 
+            if (isNewConversation) {
+                conversationDao.insert(ConversationEntity(
+                    id = conversationId, title = message.take(50),
+                    preview = message.take(80),
+                    updatedAt = System.currentTimeMillis(),
+                    createdAt = currentConversationCreatedAt,
+                ))
+            }
+
             messageDao.insert(MessageEntity(
                 id = userMsgId, conversationId = conversationId,
                 role = "User", text = message, reasoning = "",
@@ -222,7 +231,7 @@ class ChatViewModel @Inject constructor(
                 id = conversationId, title = message.take(50),
                 preview = responseText.take(80),
                 updatedAt = System.currentTimeMillis(),
-                createdAt = if (isNewConversation) System.currentTimeMillis() else currentConversationCreatedAt,
+                createdAt = currentConversationCreatedAt,
             ))
 
             finishAssistantStream(assistantId)

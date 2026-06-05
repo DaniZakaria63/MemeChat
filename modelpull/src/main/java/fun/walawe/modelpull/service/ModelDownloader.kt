@@ -30,10 +30,15 @@ class LocalModelDownloader @Inject constructor(
     private val walaweClientAPI: WalaweClientAPI,
 ) : ModelDownloader {
 
-    private val modelDir by lazy {
-        context.getDir("ml_models", Context.MODE_PRIVATE).also {
-            it.mkdirs()
+    private val modelDir: File by lazy {
+        val dir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        if (!dir.exists() && !dir.mkdirs()) {
+            error("Failed to create model directory: ${dir.absolutePath}")
         }
+        if (!dir.isDirectory) {
+            error("Model directory path is not a directory: ${dir.absolutePath}")
+        }
+        dir
     }
 
     @OptIn(ExperimentalUuidApi::class)
@@ -42,17 +47,23 @@ class LocalModelDownloader @Inject constructor(
         fileName: String,
         onProgress: (bytesDownloaded: Long, totalBytes: Long) -> Unit
     ): Result<CacheModel> {
-        val localFile = File(modelDir, fileName)
+        val safeName = File(fileName).name
+        Timber.d("getModel: uri=$uri fileName=$fileName safeName=$safeName modelDir=${modelDir.absolutePath}")
+        val localFile = File(modelDir, safeName)
 
-        if (localFile.exists()) {
-            Timber.d("Model already exists locally")
+        if (localFile.exists() && localFile.length() > 0L) {
+            Timber.d("Model already exists locally: ${localFile.absolutePath} (${localFile.length()} bytes)")
             return Result.success(CacheModel(
                 modelId = Uuid.random().toString(),
-                displayName = fileName,
+                displayName = safeName,
                 localFileDir = modelDir.absolutePath,
-                localFileName = fileName,
+                localFileName = safeName,
                 fileCache = localFile,
             ))
+        }
+        if (localFile.exists() && localFile.length() == 0L) {
+            Timber.d("Removing empty partial file from previous failed download")
+            localFile.delete()
         }
 
         try {
@@ -62,11 +73,14 @@ class LocalModelDownloader @Inject constructor(
 
             if (!response.isSuccessful || response.body() == null) {
                 return Result.failure(
-                    BadRequestException(response.message())
+                    BadRequestException("HTTP ${response.code()}: ${response.message()}")
                 )
             }
 
             withContext(Dispatchers.IO) {
+                if (!modelDir.exists() && !modelDir.mkdirs()) {
+                    throw java.io.IOException("Failed to create model directory: ${modelDir.absolutePath}")
+                }
                 val body = response.body()!!
                 val totalBytes = body.contentLength().coerceAtLeast(0L)
                 var downloaded = 0L
@@ -84,7 +98,8 @@ class LocalModelDownloader @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            return Result.failure(BadRequestException("Network error: ${e.message}"))
+            Timber.e(e, "getModel failed: uri=$uri fileName=$fileName safeName=$safeName modelDir=${modelDir.absolutePath} exists=${modelDir.exists()}")
+            return Result.failure(BadRequestException("${e::class.simpleName}: ${e.message ?: "no message"}"))
         }
 
         if (!localFile.exists() || localFile.length() == 0L) {
@@ -93,8 +108,8 @@ class LocalModelDownloader @Inject constructor(
 
         val cacheModel = CacheModel(
             modelId = Uuid.random().toString(),
-            displayName = fileName,
-            localFileName = fileName,
+            displayName = safeName,
+            localFileName = safeName,
             localFileDir = modelDir.absolutePath,
             fileCache = localFile,
             downloadedAt = System.currentTimeMillis(),
