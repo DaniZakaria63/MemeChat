@@ -13,6 +13,7 @@ bool EmbeddingEngine::init(llama_model* model, int contextSize) {
     release();
 
     m_model = model;
+    m_vocab = llama_model_get_vocab(m_model);
     n_embd  = llama_model_n_embd(m_model);
     n_batch = contextSize;
 
@@ -23,11 +24,10 @@ bool EmbeddingEngine::init(llama_model* model, int contextSize) {
     ctxParams.n_ubatch        = n_batch;
     ctxParams.embeddings      = true;
     ctxParams.pooling_type    = LLAMA_POOLING_TYPE_MEAN;
-    ctxParams.flash_attn      = true;
-    ctxParams.offload_kqv     = true;
-    ctxParams.no_kv_leftovers = true;
+    ctxParams.flash_attn_type  = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctxParams.offload_kqv      = true;
 
-    m_ctx = llama_new_context_with_model(m_model, ctxParams);
+    m_ctx = llama_init_from_model(m_model, ctxParams);
     if (m_ctx == nullptr) {
         LOGe("EmbeddingEngine: failed to create llama_context for embeddings");
         n_embd = 0;
@@ -38,21 +38,6 @@ bool EmbeddingEngine::init(llama_model* model, int contextSize) {
     return true;
 }
 
-/* -----------------------------------------------------------------------
- * embed()
- *
- * Converts a text string into a dense float vector through the LLM.
- *
- * Steps:
- *   1. Tokenise the input text (llama_tokenize with BOS, allow special).
- *   2. Build a single-sequence llama_batch from the token array.
- *   3. Call llama_encode to produce per-token hidden states.
- *   4. Read the pooled embedding from llama_get_embeddings_seq().
- *      (Mean pooling was configured in init() via params.pooling_type.)
- *   5. L2-normalise the vector for cosine-similarity with FAISS.
- *
- * Returns an empty vector on any failure (bad tokenisation, encode error).
- * ----------------------------------------------------------------------- */
 std::vector<float> EmbeddingEngine::embed(const std::string& text) {
     if (m_ctx == nullptr || m_model == nullptr) {
         LOGe("EmbeddingEngine::embed — engine not initialised");
@@ -61,13 +46,13 @@ std::vector<float> EmbeddingEngine::embed(const std::string& text) {
 
     std::vector<llama_token> tokens(n_embd);
     int nTokens = llama_tokenize(
-        m_model,
+        m_vocab,
         text.c_str(),
         text.size(),
         tokens.data(),
         static_cast<int>(tokens.size()),
-        true,   // add_bos
-        false   // special tokens
+        true,   // add_special
+        false   // parse_special
     );
 
     if (nTokens < 0) {
@@ -80,26 +65,24 @@ std::vector<float> EmbeddingEngine::embed(const std::string& text) {
     }
     tokens.resize(nTokens);
 
-    // ---- 2. Build batch -----------------------------------------------
     llama_batch batch = llama_batch_get_one(tokens.data(), nTokens);
-    // The batch's position array is already filled by the helper.
 
-    // ---- 3. Encode ----------------------------------------------------
-    if (llama_encode(m_ctx, batch) != 0) {
-        LOGe("EmbeddingEngine::embed — llama_encode failed");
+    llama_memory_clear(llama_get_memory(m_ctx), true);
+
+    if (llama_decode(m_ctx, batch) != 0) {
+        LOGe("EmbeddingEngine::embed — llama_decode failed");
         return {};
     }
 
-    // ---- 4. Read pooled embedding -------------------------------------
+    // Pooling is hardcoded to MEAN in init(), so always one vector per sequence.
     const float* embData = llama_get_embeddings_seq(m_ctx, 0);
+
     if (embData == nullptr) {
-        LOGe("EmbeddingEngine::embed — embedding data is null (seq 0)");
+        LOGe("EmbeddingEngine::embed — embedding data is null");
         return {};
     }
 
     std::vector<float> result(embData, embData + n_embd);
-
-    // ---- 5. L2 normalise ----------------------------------------------
     l2Normalize(result);
 
     return result;
@@ -124,7 +107,7 @@ std::vector<std::vector<float>> EmbeddingEngine::embedBatch(
     results.reserve(texts.size());
 
     for (size_t i = 0; i < texts.size(); ++i) {
-        LOG("EmbeddingEngine::embedBatch [%zu/%zu] — embedding...",
+        LOGi("EmbeddingEngine::embedBatch [%zu/%zu] — embedding...",
             i + 1, texts.size());
         results.push_back(embed(texts[i]));
     }
@@ -132,23 +115,10 @@ std::vector<std::vector<float>> EmbeddingEngine::embedBatch(
     return results;
 }
 
-/* -----------------------------------------------------------------------
- * dimension()
- *
- * Returns the model's native embedding dimension.  This value is used
- * by Kotlin to initialise the FAISS index with the correct vector size.
- * ----------------------------------------------------------------------- */
 int EmbeddingEngine::dimension() const {
     return n_embd;
 }
 
-/* -----------------------------------------------------------------------
- * release()
- *
- * Destroys the embedding context and resets the stored model pointer
- * and dimension.  After a call to release(), the engine is in the same
- * state as before init() — embed() will return empty vectors.
- * ----------------------------------------------------------------------- */
 void EmbeddingEngine::release() {
     if (m_ctx) {
         llama_free(m_ctx);
@@ -156,10 +126,10 @@ void EmbeddingEngine::release() {
     }
     m_model = nullptr;
     n_embd  = 0;
+    llama_backend_free();
 }
 
 /* -----------------------------------------------------------------------
- * l2Normalize()
  *
  * In-place L2 normalisation: each element is divided by the Euclidean
  * norm of the vector.

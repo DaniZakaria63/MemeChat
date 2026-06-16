@@ -49,8 +49,9 @@ public:
     void release();
 
 private:
-    llama_model*   m_model = nullptr;
-    llama_context* m_ctx   = nullptr;
+    llama_model*             m_model = nullptr;
+    const struct llama_vocab* m_vocab = nullptr;
+    llama_context*            m_ctx   = nullptr;
     int n_embd  = 0;
     int n_batch = 512;
 
