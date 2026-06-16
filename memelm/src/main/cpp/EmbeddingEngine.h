@@ -11,13 +11,13 @@
 class EmbeddingEngine {
 public:
     /**
-     * Initialise the embedding engine.
-     * @param model       Pointer to an initialised llama_model (shared).
+     * Initialise the embedding engine with its own model.
+     * @param modelPath   Path to a GGUF embedding model (e.g. Gemma embedder).
      * @param contextSize Maximum token window for a single embed call.
      *                    Default 512 — most RAG queries fit easily.
-     * @return true on success, false if context creation fails.
+     * @return true on success, false if model loading or context creation fails.
      */
-    bool init(llama_model* model, int contextSize = 512);
+    bool init(const char* modelPath, int contextSize = 512);
 
     /**
      * Embed a single text string into a dense float vector.

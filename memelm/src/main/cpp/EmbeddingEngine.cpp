@@ -3,16 +3,23 @@
 #include <cmath>
 #include <cstring>
 
-bool EmbeddingEngine::init(llama_model* model, int contextSize) {
-    if (model == nullptr) {
-        LOGe("EmbeddingEngine: received null model pointer");
+bool EmbeddingEngine::init(const char* modelPath, int contextSize) {
+    // Ensure any previous state is cleaned up before re-init.
+    release();
+
+    llama_backend_init();
+
+    llama_model_params modelParams = llama_model_default_params();
+    modelParams.use_mmap     = true;
+    modelParams.use_mlock    = false;
+    modelParams.n_gpu_layers = 0;
+
+    m_model = llama_model_load_from_file(modelPath, modelParams);
+    if (!m_model) {
+        LOGe("EmbeddingEngine: failed to load model from %s", modelPath);
         return false;
     }
 
-    // Ensure any previous context is cleaned up before re-init.
-    release();
-
-    m_model = model;
     m_vocab = llama_model_get_vocab(m_model);
     n_embd  = llama_model_n_embd(m_model);
     n_batch = contextSize;
@@ -30,7 +37,10 @@ bool EmbeddingEngine::init(llama_model* model, int contextSize) {
     m_ctx = llama_init_from_model(m_model, ctxParams);
     if (m_ctx == nullptr) {
         LOGe("EmbeddingEngine: failed to create llama_context for embeddings");
-        n_embd = 0;
+        llama_model_free(m_model);
+        m_model = nullptr;
+        m_vocab = nullptr;
+        n_embd  = 0;
         return false;
     }
 
@@ -124,7 +134,11 @@ void EmbeddingEngine::release() {
         llama_free(m_ctx);
         m_ctx = nullptr;
     }
-    m_model = nullptr;
+    if (m_model) {
+        llama_model_free(m_model);
+        m_model = nullptr;
+    }
+    m_vocab = nullptr;
     n_embd  = 0;
     llama_backend_free();
 }

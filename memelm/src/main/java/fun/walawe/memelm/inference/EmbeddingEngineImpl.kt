@@ -13,7 +13,7 @@ class EmbeddingEngineImpl private constructor() : EmbeddingEngine {
         @Volatile
         private var instance: EmbeddingEngine? = null
 
-        fun getInstance(context: Context): EmbeddingEngine {
+        fun getInstance(): EmbeddingEngine {
             return instance ?: synchronized(this) {
                 instance ?: try {
                     Log.i(TAG, "Instantiating EmbeddingEngineImpl")
@@ -32,17 +32,17 @@ class EmbeddingEngineImpl private constructor() : EmbeddingEngine {
     /**
      * JNI methods — implemented in memelm.cpp
      */
-    external fun nativeInit(contextSize: Int): Boolean
+    external fun nativeInit(modelPath: String, contextSize: Int): Boolean
     external fun nativeEmbed(text: String): FloatArray?
     external fun nativeEmbedBatch(texts: Array<String>): Array<FloatArray>?
     external fun nativeDimension(): Int
     external fun nativeRelease()
 
-    override suspend fun init(contextSize: Int): Boolean =
+    override suspend fun init(modelPath: String, contextSize: Int): Boolean =
         withContext(llamaDispatcher) {
-            Log.i(TAG, "Initializing embedding engine with contextSize=$contextSize")
+            Log.i(TAG, "Initializing embedding engine with model=$modelPath contextSize=$contextSize")
             try {
-                nativeInit(contextSize).also { ok ->
+                nativeInit(modelPath, contextSize).also { ok ->
                     if (ok) Log.i(TAG, "Embedding engine initialized")
                     else Log.e(TAG, "Embedding engine init returned false")
                 }

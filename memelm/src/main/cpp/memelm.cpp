@@ -115,35 +115,18 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeIsGenerating(
 // EmbeddingEngine JNI bridge
 // ============================================================================
 
-/**
- * nativeInit: Initialise the embedding engine.
- *
- * Must be called AFTER InferenceEngineImpl.nativeInit has loaded the model.
- * Retrieves the shared llama_model* from LLMInference and creates a
- * dedicated embedding context.
- *
- * @param contextSize  Maximum token window (e.g. 512).
- * @return true if the embedding context was created successfully.
- */
 JNIEXPORT jboolean JNICALL
 Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeInit(
-        JNIEnv* /* env */, jobject /* this */, jint contextSize) {
-    llama_model* model = g_inference.getModel();
-    if (model == nullptr) {
-        LOGe("EmbeddingEngine JNI: LLMInference has no loaded model — call init first");
-        return JNI_FALSE;
-    }
-    bool ok = g_embedding.init(model, static_cast<int>(contextSize));
+        JNIEnv* env, jobject /* this */, jstring modelPath, jint contextSize) {
+    const char* path = env->GetStringUTFChars(modelPath, nullptr);
+    if (path == nullptr) return JNI_FALSE;
+
+    bool ok = g_embedding.init(path, static_cast<int>(contextSize));
+    env->ReleaseStringUTFChars(modelPath, path);
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-/**
- * nativeEmbed: Embed a single text string.
- *
- * @param text  UTF-8 input (preprocessed query or chunk).
- * @return      float[] of dimension = llama_n_embd (2048 for LLaMA 3B).
- *              Returns null on failure.
- */
+
 JNIEXPORT jfloatArray JNICALL
 Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeEmbed(
         JNIEnv* env, jobject /* this */, jstring text) {
@@ -163,13 +146,7 @@ Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeEmbed(
 }
 
 /**
- * nativeEmbedBatch: Embed multiple texts in one call.
- *
- * Each string is embedded sequentially.  Returns an array of float[]
- * where the outer array length matches the input count.
- *
- * @param texts  String array of texts to embed.
- * @return       Array of float[] embeddings, one per input.
+ * @warning This native function still under maintenance
  */
 JNIEXPORT jobjectArray JNICALL
 Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeEmbedBatch(
@@ -226,21 +203,12 @@ Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeEmbedBatch(
     return result;
 }
 
-/**
- * nativeDimension: Query the embedding dimension.
- */
 JNIEXPORT jint JNICALL
 Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeDimension(
         JNIEnv* /* env */, jobject /* this */) {
     return static_cast<jint>(g_embedding.dimension());
 }
 
-/**
- * nativeRelease: Tear down the embedding context.
- *
- * Safe to call multiple times.  Should be called when the app is
- * shutting down or when the user switches to a different model.
- */
 JNIEXPORT void JNICALL
 Java_fun_walawe_memelm_inference_EmbeddingEngineImpl_nativeRelease(
         JNIEnv* /* env */, jobject /* this */) {
