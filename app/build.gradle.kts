@@ -14,8 +14,9 @@ android {
     }
 
     defaultConfig {
+        testInstrumentationRunnerArguments += mapOf()
         applicationId = "fun.walawe.memechat"
-        minSdk = 24
+        minSdk = 27
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -40,6 +41,11 @@ android {
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/DEPENDENCIES"
+        }
     }
 }
 

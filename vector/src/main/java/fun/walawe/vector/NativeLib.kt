@@ -1,4 +1,4 @@
-package io.github.antinormies.vector
+package `fun`.walawe.vector
 
 class NativeLib {
 

@@ -1,7 +1,5 @@
 package `fun`.walawe.modelpull.model
 
-import `fun`.walawe.constant.CACHE_KEY_MODEL
-import `fun`.walawe.constant.CACHE_KEY_MMPROJ
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -47,5 +45,6 @@ class ModelCache @Inject constructor() {
 enum class CacheKey {
     Model,
     MMPROJ,
+    EMBEDDING,
     ALL,
 }

@@ -1,5 +1,6 @@
 [versions]
 agp = "9.2.1"
+opennlpRuntime = "3.0.0-M3"
 richtext = "1.0.0-alpha04"
 guava = "33.6.0-android"
 kotlin = "2.3.20"
@@ -75,6 +76,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
+opennlp-runtime = { module = "org.apache.opennlp:opennlp-runtime", version.ref = "opennlpRuntime" }
 richtext-commonmark = { group = "com.halilibo.compose-richtext", name = "richtext-commonmark", version.ref = "richtext" }
 richtext-ui-material3 = { group = "com.halilibo.compose-richtext", name = "richtext-ui-material3", version.ref = "richtext" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
@@ -93,8 +95,6 @@ androidx-work-hilt = { module = "androidx.hilt:hilt-work", version.ref = "hiltWo
 androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltWork" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltCompose" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
-jetbrains-markdown = { group = "org.jetbrains", name = "markdown", version.ref = "markdown" }
-metadata-extractor = { module = "com.drewnoakes:metadata-extractor", version.ref = "metadataExtractor" }
 google-accompanist-permission = { module = "com.google.accompanist:accompanist-permissions", version = "0.37.3" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }

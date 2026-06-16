@@ -7,12 +7,12 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import `fun`.walawe.constant.DEFAULT_EMBEDDING_DOWNLOADER_URI
 import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
 import `fun`.walawe.constant.DEFAULT_MMPROJ_DOWNLOADER_URI
+import `fun`.walawe.constant.MODEL_FILENAME_EMBEDDING
 import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
 import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_MMPROJ
-import `fun`.walawe.constant.MODEL_FILENAME_QWEN
-import `fun`.walawe.constant.MODEL_FILENAME_QWEN_MMPROJ
 import `fun`.walawe.constant.orZero
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheKey
@@ -44,6 +44,12 @@ class ModelDownloadWorker @AssistedInject constructor(
                 fileName = MODEL_FILENAME_MINICPM_MMPROJ,
                 cacheModel = true,
                 keyCacheModel = CacheKey.MMPROJ
+            ),
+            DownloadTarget(
+                uri = DEFAULT_EMBEDDING_DOWNLOADER_URI,
+                fileName = MODEL_FILENAME_EMBEDDING,
+                cacheModel = true,
+                keyCacheModel = CacheKey.EMBEDDING
             )
         )
 

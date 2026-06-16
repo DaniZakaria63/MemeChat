@@ -12,8 +12,9 @@ android {
     }
 
     defaultConfig {
-        minSdk = 24
 
+        testInstrumentationRunnerArguments += mapOf()
+        minSdk = 27
         testInstrumentationRunner = "fun.walawe.modelpull.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
         consumerProguardFiles("consumer-rules.pro")
