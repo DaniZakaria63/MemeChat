@@ -38,6 +38,9 @@ litertGpu = "1.4.2"
 uiGraphics = "1.11.1"
 ui = "1.11.1"
 material3 = "1.4.0"
+espressoCore = "3.7.0"
+appcompat = "1.7.1"
+material = "1.14.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -104,6 +107,9 @@ mockk = { module = "io.mockk:mockk", version = "1.14.9"}
 jetbrains-coroutine-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutine" }
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litertGpu" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
