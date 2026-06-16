@@ -1,6 +1,6 @@
 # Advanced RAG + Vector Search Implementation Plan
 
-> Replaces the naive keyword `MemoryService` with dense vector retrieval. **FAISS** is a git submodule at `faiss/`, prebuilt into a static library. **`:vector`** is the dedicated JNI bridge module wrapping FAISS operations. **OpenNLP** handles text preprocessing (sentence detection, tokenization). **`:memelm`** provides embedding via `llama_encode`.
+> Replaces the naive keyword `MemoryService` with dense vector retrieval. **FAISS** is a git submodule at `faiss/`, compiled from source via CMake `add_subdirectory`. **`:vector`** is the dedicated JNI bridge module wrapping FAISS operations. **OpenNLP** handles text preprocessing (sentence detection, tokenization). **`:memelm`** provides embedding via `llama_encode`.
 
 ---
 
@@ -32,11 +32,11 @@
 │         │             │ libvector.so (C++ FAISS wrapper)     │                   │
 │         │             │                                      │                   │
 │         │             │  VectorStore.h/.cpp                   │                   │
-│         │             │    ┌──────────────────────┐          │                   │
-│         │             │    │ libfaiss.a (prebuilt) │◄── static link              │
-│         │             │    │ IndexFlatIP          │          │                   │
-│         │             │    │ IndexIDMap           │          │                   │
-│         │             │    └──────────────────────┘          │                   │
+│         │             │    ┌──────────────────────────┐      │                   │
+│         │             │    │ faiss/ (submodule src)   │◄── add_subdirectory     │
+│         │             │    │ IndexFlatIP              │      │                   │
+│         │             │    │ IndexIDMap               │      │                   │
+│         │             │    └──────────────────────────┘      │                   │
 │         │             └──────────────────────────────────────┘                   │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@
 
 | Module | Layer | Responsibility |
 |--------|-------|---------------|
-| `:vector` | JNI bridge (Kotlin + C++) | FAISS vector store operations — `add`, `search`, `remove`, `save`, `load`. Links against **prebuilt `libfaiss.a`**. A single `System.loadLibrary("vector")` loads everything. |
+| `:vector` | JNI bridge (Kotlin + C++) | FAISS vector store operations — `add`, `search`, `remove`, `save`, `load`. FAISS is compiled from the `faiss/` git submodule via `add_subdirectory`. A single `System.loadLibrary("vector")` loads everything. |
 | `:memelm` | JNI bridge (Kotlin + C++) | `EmbeddingEngine` (new): `llama_encode` with mean pooling → 2048-dim float vector. `LLMInference` (existing): text/image generation. |
 | `:local` | Kotlin services | `PreprocessTextService` (OpenNLP): sentence detection, tokenization, noise reduction. `MemoryService`: RAG orchestrator. Room: `ChunkEntity`, `FaissMappingEntity`, existing entities. |
 | `:app` | UI + ViewModel | `ChatViewModel`: wires everything, injects RAG context into ChatML. |
@@ -59,66 +59,45 @@
       ──► :modelpull
       ──► :constant
 
-:vector → no module deps (pure JNI, links libfaiss.a)
+:vector → no module deps (pure JNI, compiles faiss from submodule source via add_subdirectory)
 :memelm → :constant only
 :local  → :memelm (interface types), :vector (interface types)
 ```
 
 ---
 
-## FAISS Build Strategy: Prebuilt Static Library vs Submodule
+## FAISS Build Strategy: CMake Submodule
 
 ### Current Setup
 
 ```
 faiss/                    (git submodule — Facebook FAISS v1.14.3 source)
-vector/libs/arm64-v8a/    (prebuilt libfaiss.a — built once from faiss/)
 ```
 
-The plan: build FAISS **once** as a static library using the NDK toolchain, commit the `.a` binary, then link it into `libvector.so`. No `add_subdirectory(faiss)` in CMake — just `target_link_libraries`.
+FAISS is added as a git submodule at `faiss/` and compiled from source via `add_subdirectory` in CMake. No prebuilt `.a` binary is committed — the NDK compiles FAISS along with `libvector.so` on every build.
 
-### Comparison
+### Why Submodule Over Prebuilt
 
 | Aspect | Prebuilt Static Library (`libfaiss.a`) | CMake Submodule (`add_subdirectory`) |
 |--------|--------------------------------------|--------------------------------------|
-| **Build time** | FAISS built once, commit .a — subsequent project builds are fast | Every clean build recompiles all FAISS sources (~200+ .cpp files) |
-| **Complexity** | Simple CMake: `target_link_libraries(vector .../libfaiss.a)` | Complex: must cherry-pick source files, handle missing symbols, manage SIMD flags per ABI |
-| **ABI flexibility** | Need to rebuild `.a` per ABI (arm64-v8a only here) | Same — still needs per-ABI compilation, just automated |
+| **Build time** | FAISS built once, commit .a — subsequent builds fast | Every clean build recompiles all FAISS sources |
+| **Complexity** | Simple CMake: `target_link_libraries(vector .../libfaiss.a)` | Cherry-pick FAISS source files, handle BLAS stubs, manage SIMD flags per ABI |
+| **Git repo size** | +180 MB (binary `.a`) — rejected by GitHub | ~20 MB (source, shallow clone) |
 | **FAISS updates** | Manual: rebuild .a, replace file, commit | Automatic: pull submodule, rebuild picks up changes |
-| **Compiler flags** | Decoupled — FAISS can use `-O3 -march=armv8-a+fp16` independently | Flags must be compatible across the whole CMake tree |
-| **Debugging** | Harder — no source stepping into FAISS | Easier — FAISS sources are in the IDE project |
-| **APK size** | FAISS code is inside `libvector.so` (6–8 MB) | Same — FAISS is still compiled into the same .so |
-| **NDK toolchain compat** | Must match NDK version exactly (build .a with same NDK as project) | Handled automatically |
+| **Debugging** | Harder — no source stepping into FAISS | Easier — FAISS sources visible in IDE |
+| **APK size** | FAISS inside `libvector.so` (6–8 MB) | Same — FAISS compiled into the same .so |
+| **NDK toolchain compat** | Must match NDK version exactly | Handled automatically |
 
-**Recommendation:** Prebuilt static library is the right choice here because:
-1. FAISS is stable (no frequent updates needed for a vector index)
-2. The project only targets `arm64-v8a` — one ABI, one `.a` file
-3. Build time savings for the developer iterating on the app
-4. CMake stays simple — no complex FAISS CMake integration
+**Decision:** Submodule approach was chosen because the 180 MB prebuilt `.a` binary exceeds GitHub's file size limits. The shallow submodule (`git submodule add --depth 1`) keeps the checkout small while ensuring FAISS is always available.
 
-### How to Build libfaiss.a for Android
+### Building FAISS for Android (Submodule Approach)
 
-```bash
-# One-time build from project root
-cd faiss
-mkdir -p build-android && cd build-android
+FAISS is built directly by CMake via `add_subdirectory(faiss)`. The CMake configuration handles:
 
-cmake .. \
-  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-28 \
-  -DFAISS_OPT_LEVEL=generic \
-  -DBUILD_TESTING=OFF \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DFAISS_ENABLE_GPU=OFF \
-  -DFAISS_ENABLE_PYTHON=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-
-cmake --build . -j$(nproc)
-
-# Copy the static lib to :vector module
-cp faiss/libfaiss.a ../vector/libs/arm64-v8a/
-```
+1. **FAISS_SOURCE_DIR** — points to `faiss/faiss/` (the actual library sources within the repo)
+2. **BLAS stubs** — Android lacks BLAS; a `blas_stubs.cpp` provides no-op `sgemm_`/`dgemm_` (never called by `IndexFlat` at runtime)
+3. **SIMD flags** — set per-target for `arm64-v8a`
+4. **Cherry-picked sources** — only `IndexFlat`, `IndexIDMap`, and their dependencies are compiled (not full FAISS)
 
 ---
 
@@ -370,14 +349,11 @@ interface EmbeddingEngine {
 ```
 vector/
 ├── build.gradle.kts
-├── libs/
-│   └── arm64-v8a/
-│       └── libfaiss.a                    (PREBUILT — commit this binary)
 ├── src/
 │   ├── main/
 │   │   ├── AndroidManifest.xml
 │   │   ├── cpp/
-│   │   │   ├── CMakeLists.txt            (updated to link libfaiss.a)
+│   │   │   ├── CMakeLists.txt            (add_subdirectory faiss)
 │   │   │   ├── VectorStore.h             (FAISS wrapper class)
 │   │   │   └── vector.cpp                (JNI bridge methods)
 │   │   └── java/io/github/antinormies/vector/
@@ -454,17 +430,17 @@ private:
 };
 ```
 
-### 3.3 CMakeLists.txt (Link Prebuilt libfaiss.a)
+### 3.3 CMakeLists.txt (Submodule + add_subdirectory)
 
 ```cmake
 # vector/src/main/cpp/CMakeLists.txt
 cmake_minimum_required(VERSION 3.22.1)
 project("vector")
 
-# Prebuilt FAISS static library
-add_library(faiss STATIC IMPORTED)
-set_target_properties(faiss PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../libs/${ANDROID_ABI}/libfaiss.a
+# FAISS submodule — compiled from source
+# Only pick the core IndexFlat/IndexIDMap sources to keep build fast
+add_subdirectory(${CMAKE_SOURCE_DIR}/../../faiss/faiss faiss_build
+    EXCLUDE_FROM_ALL
 )
 
 # Our JNI library
@@ -474,11 +450,11 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/../../faiss  # FAISS headers from submodule
+    ${CMAKE_SOURCE_DIR}/../../faiss  # FAISS headers
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-    faiss          # static libfaiss.a
+    faiss          # compiled from submodule
     android
     log
 )
@@ -1026,9 +1002,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 }
-
-// Ensure FAISS prebuilt lib is packaged
-android.sourceSets.main.jniLibs.srcDirs("libs")
 ```
 
 ### `:local/build.gradle.kts` — add deps
@@ -1052,36 +1025,20 @@ opennlp = "3.0.0-M3"
 opennlp-runtime = { group = "org.apache.opennlp", name = "opennlp-runtime", version.ref = "opennlp" }
 ```
 
-### FAISS prebuilt static lib — one-time build
+### FAISS via git submodule
 
-> **Prerequisites:** CMake 3.24+, Android NDK (tested on r28.2.13676358), and the following patch applied to the FAISS submodule's `faiss/faiss/CMakeLists.txt`:
-> 1. **`blas_stubs.cpp`** added to `FAISS_SRC` — provides stub `sgemm_`/`dgemm_` (BLAS is not available on Android, but these symbols are never called by `IndexFlat` at runtime)
-> 2. **`FAISS_ENABLE_BLAS` option** (default ON) wraps the BLAS/LAPACK `find_package` — set to `OFF` for Android
+FAISS is added as a shallow git submodule. It is **not** committed as a binary — the NDK compiles it on every build via `add_subdirectory` in CMake.
 
 ```bash
-# Step 1: Configure
-cd faiss
-mkdir -p build-android && cd build-android
-cmake .. \
-  -DCMAKE_TOOLCHAIN_FILE=$HOME/Android/Sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-28 \
-  -DFAISS_OPT_LEVEL=generic \
-  -DBUILD_TESTING=OFF \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DFAISS_ENABLE_GPU=OFF \
-  -DFAISS_ENABLE_PYTHON=OFF \
-  -DFAISS_ENABLE_C_API=OFF \
-  -DFAISS_ENABLE_EXTRAS=OFF \
-  -DFAISS_ENABLE_BLAS=OFF \
-  -DCMAKE_BUILD_TYPE=Release
-
-# Step 2: Build
-cmake --build . -j$(nproc)
-
-# Step 3: Copy into :vector module
-cp faiss/libfaiss.a ../vector/libs/arm64-v8a/
+# Add the submodule (already done — shown for reference)
+git submodule add --depth 1 https://github.com/facebookresearch/faiss faiss
 ```
+
+> **FAISS CMake notes for Android:** The submodule's `faiss/faiss/CMakeLists.txt` requires two patches for Android:
+> 1. **`blas_stubs.cpp`** — add to `FAISS_SRC`; provides no-op `sgemm_`/`dgemm_` stubs (BLAS unavailable on Android, never called by `IndexFlat`)
+> 2. **`FAISS_ENABLE_BLAS` option** (default `ON`) — set to `OFF`; wraps BLAS/LAPACK `find_package` that fails on Android
+>
+> These are handled by the CMake configuration in `:vector` — see Section 3.3.
 
 ---
 
@@ -1089,9 +1046,9 @@ cp faiss/libfaiss.a ../vector/libs/arm64-v8a/
 
 | Step | What | Files Affected | Module |
 |------|------|---------------|--------|
-| 1 | Build FAISS static lib, copy to `vector/libs/` | `vector/libs/arm64-v8a/libfaiss.a` (new) | root |
+| 1 | Add FAISS git submodule | `faiss/` (new submodule), `.gitmodules` | root |
 | 2 | Add OpenNLP models to assets | `local/src/main/assets/models/opennlp-en-ud-ewt-sentence-1.3-2.5.4.bin`, `opennlp-en-ud-ewt-tokens-1.3-2.5.4.bin` | `:local` |
-| 3 | Update `:vector` CMakeLists.txt to link `libfaiss.a` | `vector/src/main/cpp/CMakeLists.txt` | `:vector` |
+| 3 | Update `:vector` CMakeLists.txt with `add_subdirectory(faiss)` | `vector/src/main/cpp/CMakeLists.txt` | `:vector` |
 | 4 | Add `VectorStore.h` + JNI bridge in `vector.cpp` | `vector/src/main/cpp/VectorStore.h`, `vector.cpp` | `:vector` |
 | 5 | Add `VectorStore.kt` Kotlin API | `vector/src/main/java/.../VectorStore.kt` | `:vector` |
 | 6 | Add `EmbeddingEngine` C++ class + JNI | `memelm/src/main/cpp/EmbeddingEngine.h/.cpp`, `memelm.cpp` | `:memelm` |
