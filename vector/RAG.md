@@ -14,7 +14,7 @@
 │  │ :app         │  │ :local                   │  │ :memelm                   │  │
 │  │ ChatViewModel│──► MemoryService (orchestr.)│  │ ┌──────────────────────┐ │  │
 │  │ (injects all)│  │ │                        │  │ │ EmbeddingEngine     │ │  │
-│  │              │  │ ├─ PreprocessingService  │  │ │ (JNI → llama_encode) │ │  │
+│  │              │  │ ├─ PreprocessTextService  │  │ │ (JNI → llama_encode) │ │  │
 │  │ sendMessage()│  │ │   (OpenNLP)            │  │ └──────────┬───────────┘ │  │
 │  │ → retrieve() │  │ ├─ ChunkDao (Room)       │  │            │              │  │
 │  │ → embed()    │  │ ├─ FaissMappingDao       │  │   ┌────────▼───────────┐  │  │
@@ -47,7 +47,7 @@
 |--------|-------|---------------|
 | `:vector` | JNI bridge (Kotlin + C++) | FAISS vector store operations — `add`, `search`, `remove`, `save`, `load`. Links against **prebuilt `libfaiss.a`**. A single `System.loadLibrary("vector")` loads everything. |
 | `:memelm` | JNI bridge (Kotlin + C++) | `EmbeddingEngine` (new): `llama_encode` with mean pooling → 2048-dim float vector. `LLMInference` (existing): text/image generation. |
-| `:local` | Kotlin services | `PreprocessingService` (OpenNLP): sentence detection, tokenization, noise reduction. `MemoryService`: RAG orchestrator. Room: `ChunkEntity`, `FaissMappingEntity`, existing entities. |
+| `:local` | Kotlin services | `PreprocessTextService` (OpenNLP): sentence detection, tokenization, noise reduction. `MemoryService`: RAG orchestrator. Room: `ChunkEntity`, `FaissMappingEntity`, existing entities. |
 | `:app` | UI + ViewModel | `ChatViewModel`: wires everything, injects RAG context into ChatML. |
 
 ### Dependency Graph
@@ -156,10 +156,10 @@ opennlp = "3.0.0-M3"
 opennlp-runtime = { group = "org.apache.opennlp", name = "opennlp-runtime", version.ref = "opennlp" }
 ```
 
-### 1.2 PreprocessingService
+### 1.2 PreprocessTextService
 
 ```kotlin
-// local/src/main/java/fun/walawe/local/service/PreprocessingService.kt
+// local/src/main/java/fun/walawe/local/service/PreprocessTextService.kt
 package fun.walawe.local.service
 
 import android.content.Context
@@ -173,7 +173,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class PreprocessingService @Inject constructor(
+class PreprocessTextService @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     // Lazy-load OpenNLP models from assets (extract on first use).
@@ -213,17 +213,30 @@ class PreprocessingService @Inject constructor(
     }
 
     private fun normalizeText(text: String): String {
-        return text
-            .trim()
-            .replace(Regex("https?://\\S+"), "")          // remove URLs
-            .replace(Regex("[\\w.+-]+@[\\w.-]+"), "")      // remove emails
-            .replace(Regex("&#\\d+;|#\\w+"), "")           // HTML entities, hashtags
-            .replace(Regex("[\\u{1F600}-\\u{1F64F}\\u{1F300}-\\u{1F5FF}" +
-                "\\u{1F680}-\\u{1F6FF}\\u{1F1E0}-\\u{1F1FF}" +
-                "\\u{2600}-\\u{26FF}\\u{2700}-\\u{27BF}]"), " ") // emoji → space
-            .replace(Regex("\\s+"), " ")                    // collapse whitespace
+        val stripped = text.trim()
+            .replace(Regex("https?://\\S+"), "")
+            .replace(Regex("[\\w.+-]+@[\\w.-]+"), "")
+            .replace(Regex("&#\\d+;|#\\w+"), "")
+
+        val filtered = buildString {
+            var i = 0
+            while (i < stripped.length) {
+                val cp = stripped.codePointAt(i)
+                i += Character.charCount(cp)
+                if (!isEmojiCodePoint(cp)) appendCodePoint(cp)
+            }
+        }
+        return filtered
+            .replace(Regex("\\s+"), " ")
             .let { if (it.length > 2000) it.take(2000) else it }
     }
+
+    private fun isEmojiCodePoint(cp: Int): Boolean = cp in 0x1F600..0x1F64F ||
+            cp in 0x1F300..0x1F5FF ||
+            cp in 0x1F680..0x1F6FF ||
+            cp in 0x1F1E0..0x1F1FF ||
+            cp in 0x2600..0x26FF ||
+            cp in 0x2700..0x27BF
 
     /**
      * OpenNLP sentence detection.
@@ -709,7 +722,7 @@ This replaces the naive keyword `MemoryService` with the full RAG pipeline.
 
 @Singleton
 class MemoryService @Inject constructor(
-    private val preprocessingService: PreprocessingService,
+    private val preprocessingService: PreprocessTextService,
     private val embeddingEngine: EmbeddingEngine,    // from :memelm
     private val vectorStore: VectorStore,            // from :vector (FAISS JNI)
     private val chunkDao: ChunkDao,
@@ -939,7 +952,7 @@ init {
 ```
 User: "explain memes to me"
   │
-  ├─ PreprocessingService.preprocess()
+  ├─ PreprocessTextService.preprocess()
   │   ├─ OpenNLP sentDetect → ["explain memes to me"]
   │   ├─ OpenNLP tokenize → [explain, memes, me]
   │   └─ (embedding model handles semantics natively — no synonym expansion needed)
@@ -969,7 +982,7 @@ User: "explain memes to me"
 ```
 User: "hello" (first message, empty index)
   │
-  ├─ PreprocessingService.preprocess() → "hello"
+  ├─ PreprocessTextService.preprocess() → "hello"
   ├─ EmbeddingEngine.embed() → valid vector
   ├─ VectorStore.search() → empty (index has 0 vectors)
   │
@@ -1083,7 +1096,7 @@ cp faiss/libfaiss.a ../vector/libs/arm64-v8a/
 | 5 | Add `VectorStore.kt` Kotlin API | `vector/src/main/java/.../VectorStore.kt` | `:vector` |
 | 6 | Add `EmbeddingEngine` C++ class + JNI | `memelm/src/main/cpp/EmbeddingEngine.h/.cpp`, `memelm.cpp` | `:memelm` |
 | 7 | Add `EmbeddingEngine.kt` + impl | `memelm/.../inference/EmbeddingEngine.kt` | `:memelm` |
-| 8 | Add `PreprocessingService.kt` (OpenNLP) | `local/.../service/PreprocessingService.kt` | `:local` |
+| 8 | Add `PreprocessTextService.kt` (OpenNLP) | `local/.../service/PreprocessTextService.kt` | `:local` |
 | 9 | Add Room entities + DAOs + migration | `local/.../data/ChunkEntity.kt`, `FaissMappingEntity.kt`, `ChunkDao.kt` | `:local` |
 | 10 | Rewrite `MemoryService.kt` (RAG orchestrator) | `local/.../service/MemoryService.kt` | `:local` |
 | 11 | Add `buildWithContext()` to ChatMLBuilder | `app/.../data/ChatMLBuilder.kt` | `:app` |

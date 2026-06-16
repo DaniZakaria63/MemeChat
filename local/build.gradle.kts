@@ -25,7 +25,7 @@ android {
 }
 
 dependencies {
-    implementation(libs.androidx.core.ktx)
+    implementation(project(":constant"))
     implementation(libs.opennlp.runtime)
     implementation (libs.androidx.room.runtime)
     implementation (libs.androidx.room.ktx)
