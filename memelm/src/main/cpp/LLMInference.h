@@ -38,10 +38,10 @@ public:
     void cancelGeneration();
     bool isGenerating() const;
 
-    // Resets the full conversation: clears KV cache AND n_past cursor.
-    // Call this between independent conversations.
     void resetContext();
     void release();
+
+    llama_model* getModel() const { return m_model; }
 
 private:
     llama_model*       m_model    = nullptr;
