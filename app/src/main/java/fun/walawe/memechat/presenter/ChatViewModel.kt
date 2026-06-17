@@ -5,9 +5,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
-import `fun`.walawe.local.data.ConversationDao
+import `fun`.walawe.local.dao.ConversationDao
 import `fun`.walawe.local.data.ConversationEntity
-import `fun`.walawe.local.data.MessageDao
+import `fun`.walawe.local.dao.MessageDao
 import `fun`.walawe.local.data.MessageEntity
 import `fun`.walawe.local.service.MemoryService
 import `fun`.walawe.memechat.data.ChatMLBuilder

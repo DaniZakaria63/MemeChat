@@ -1,7 +1,7 @@
 package `fun`.walawe.local.service
 
 import timber.log.Timber
-import `fun`.walawe.local.data.MessageDao
+import `fun`.walawe.local.dao.MessageDao
 import `fun`.walawe.local.data.MessageEntity
 import javax.inject.Inject
 import javax.inject.Singleton

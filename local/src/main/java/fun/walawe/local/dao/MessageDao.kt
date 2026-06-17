@@ -1,8 +1,9 @@
-package `fun`.walawe.local.data
+package `fun`.walawe.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import `fun`.walawe.local.data.MessageEntity
 
 @Dao
 interface MessageDao {

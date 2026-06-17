@@ -7,9 +7,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import `fun`.walawe.local.data.AppDatabase
-import `fun`.walawe.local.data.ConversationDao
-import `fun`.walawe.local.data.MessageDao
+import `fun`.walawe.local.AppDatabase
+import `fun`.walawe.local.dao.ChunkDao
+import `fun`.walawe.local.dao.ConversationDao
+import `fun`.walawe.local.dao.MessageDao
 import javax.inject.Singleton
 
 @Module
@@ -19,6 +20,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "memechat.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
 
     @Provides
@@ -26,4 +28,7 @@ object DatabaseModule {
 
     @Provides
     fun provideMessageDao(db: AppDatabase): MessageDao = db.messageDao()
+
+    @Provides
+    fun provideChunkDao(db: AppDatabase): ChunkDao = db.chunkDao()
 }
