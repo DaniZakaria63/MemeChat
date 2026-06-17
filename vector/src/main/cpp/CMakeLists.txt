@@ -1,37 +1,40 @@
-# For more information about using CMake with Android Studio, read the
-# documentation: https://d.android.com/studio/projects/add-native-code.html.
-# For more examples on how to use CMake, see https://github.com/android/ndk-samples.
-
-# Sets the minimum CMake version required for this project.
 cmake_minimum_required(VERSION 3.22.1)
+project("vector" LANGUAGES C CXX)
 
-# Declares the project name. The project name can be accessed via ${ PROJECT_NAME},
-# Since this is the top level CMakeLists.txt, the project name is also accessible
-# with ${CMAKE_PROJECT_NAME} (both CMake variables are in-sync within the top level
-# build script scope).
-project("vector")
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
-# Creates and names a library, sets it as either STATIC
-# or SHARED, and provides the relative paths to its source code.
-# You can define multiple libraries, and CMake builds them for you.
-# Gradle automatically packages shared libraries with your APK.
-#
-# In this top level CMakeLists.txt, ${CMAKE_PROJECT_NAME} is used to define
-# the target library name; in the sub-module's CMakeLists.txt, ${PROJECT_NAME}
-# is preferred for the same purpose.
-#
-# In order to load a library into your app from Java/Kotlin, you must call
-# System.loadLibrary() and pass the name of the library defined here;
-# for GameActivity/NativeActivity derived applications, the same library name must be
-# used in the AndroidManifest.xml file.
-add_library(${CMAKE_PROJECT_NAME} SHARED
-        # List C/C++ source files with relative paths to this CMakeLists.txt.
-        vector.cpp)
+if(NOT DEFINED FAISS_DIR)
+    message(FATAL_ERROR
+        "FAISS_DIR not defined. Add -DFAISS_DIR=<path> in build.gradle.kts")
+endif()
+if(NOT EXISTS "${FAISS_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "FAISS_DIR (${FAISS_DIR}) does not contain CMakeLists.txt")
+endif()
 
-# Specifies libraries CMake should link to your target library. You
-# can link libraries from various origins, such as libraries defined in this
-# build script, prebuilt third-party libraries, or Android system libraries.
-target_link_libraries(${CMAKE_PROJECT_NAME}
-        # List libraries link to the target library
-        android
-        log)
+set(FAISS_ENABLE_GPU     OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_PYTHON  OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_C_API   OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_EXTRAS  OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_MKL     OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_SVS     OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_METAL   OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_CUVS    OFF CACHE BOOL "" FORCE)
+set(FAISS_OPT_LEVEL      "generic" CACHE STRING "" FORCE)
+
+add_subdirectory(${FAISS_DIR})
+
+add_library(${CMAKE_PROJECT_NAME} SHARED vector.cpp)
+
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+    faiss
+    android
+    log
+)
+
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE -O3)

@@ -16,15 +16,18 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
-                cppFlags("-std=c++17")
+                arguments += "-DFAISS_DIR=${rootProject.projectDir}/faiss"
             }
+        }
+        ndk {
+            abiFilters += "arm64-v8a"
         }
     }
 
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "3.31.6"
         }
     }
     compileOptions {
