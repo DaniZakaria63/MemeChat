@@ -251,15 +251,15 @@ Lifecycle:
 
 ## 5. Phase 4: Room DB Extensions (`:local`)
 
-*(unchanged from previous plan)*
+Single entity:
 
 | Entity | Table | Key |
 |--------|-------|-----|
 | `ChunkEntity` | `chunks` | `id` (UUID), FK → `messages.id`, indexed `faissId` |
-| `FaissMappingEntity` | `faiss_mappings` | PK = `faissId`, indexed `chunkId` |
-| `ChunkDao` | — | `getChunksByFaissIds()`, `getFaissIdsByConversation()` |
 
-Migration v1→v2 creates both tables.
+**Why no `FaissMappingEntity`:** `ChunkEntity.faissId` is already indexed, so every query pattern (FAISS ID → chunk, conversation → FAISS IDs) works from one table. A separate mapping table adds sync risk and complexity for zero gain.
+
+Migration v1→v2 creates `chunks` table.
 
 ---
 
