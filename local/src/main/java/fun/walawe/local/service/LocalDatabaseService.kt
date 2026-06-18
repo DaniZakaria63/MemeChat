@@ -8,14 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Design:
- * This class is a single-source repository for any component to access conversation and message dao.
- * The key is to move from direct-access at ChatViewModel to singleton source repository to handle it.
- * Keys:
- * - Get all conversation list
- * - All method handler for conversation and message dao
- */
 @Singleton
 class LocalDatabaseService @Inject constructor(
     private val conversationDao: ConversationDao,
