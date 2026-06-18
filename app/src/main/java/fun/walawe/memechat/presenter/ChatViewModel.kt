@@ -5,15 +5,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
-import `fun`.walawe.local.dao.ConversationDao
 import `fun`.walawe.local.data.ConversationEntity
-import `fun`.walawe.local.dao.MessageDao
 import `fun`.walawe.local.data.MessageEntity
 import `fun`.walawe.local.service.LocalDatabaseService
-import `fun`.walawe.local.service.MemoryService
 import `fun`.walawe.memechat.data.ChatMLBuilder
-import `fun`.walawe.memechat.data.ImageDecoder
-import `fun`.walawe.memechat.data.ImageStore
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
@@ -41,14 +36,14 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import timber.log.Timber
+import `fun`.walawe.memechat.data.ImageManipulation
 import javax.inject.Inject
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
-    private val imageDecoder: ImageDecoder,
     private val inferenceEngine: InferenceEngine,
-    private val imageStore: ImageStore,
+    private val imageManipulation: ImageManipulation,
     private val localDBService: LocalDatabaseService,
 ) : BaseViewModel() {
 
@@ -88,7 +83,7 @@ class ChatViewModel @Inject constructor(
             prepareModel()
             runCatching {
                 val validIds = localDBService.getAllConversationIds().toSet()
-                imageStore.sweepOrphans(validIds)
+                imageManipulation.sweepOrphans(validIds)
             }
         }
     }
@@ -143,7 +138,7 @@ class ChatViewModel @Inject constructor(
     fun deleteConversation(conversationId: String) {
         safeViewModelScope.launch {
             localDBService.deleteConversation(conversationId)
-            imageStore.deleteConversationFolder(conversationId)
+            imageManipulation.deleteConversationFolder(conversationId)
             if (_currentConversationId.value == conversationId) {
                 startNewConversation()
             }
@@ -168,7 +163,7 @@ class ChatViewModel @Inject constructor(
             val assistantId = UUID.randomUUID().toString()
 
             val persistedImagePath: String? = transientImageUri?.let { uriString ->
-                imageStore.copyToInternal(
+                imageManipulation.copyToInternal(
                     src = uriString.toUri(),
                     conversationId = conversationId,
                     messageId = userMsgId,
@@ -205,7 +200,7 @@ class ChatViewModel @Inject constructor(
 
             var responseText = ""
             val imageBitmap = persistedImagePath?.let { path ->
-                withContext(Dispatchers.IO) { imageDecoder.decode(Uri.fromFile(File(path))) }
+                withContext(Dispatchers.IO) { imageManipulation.decode(Uri.fromFile(File(path))) }
             }
 
             val resetFirst = !isKvCachePopulated

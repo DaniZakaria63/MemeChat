@@ -9,11 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class ImageStore @Inject constructor(
+class ImageManipulation @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     companion object {
@@ -23,6 +24,13 @@ class ImageStore @Inject constructor(
     }
 
     private val root: File = File(context.filesDir, IMAGES_DIR).apply { mkdirs() }
+
+    fun decode(uri: Uri): Bitmap {
+        val inputStream: InputStream = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalArgumentException("Unable to open image stream")
+        return inputStream.use { BitmapFactory.decodeStream(it) }
+            ?: throw IllegalArgumentException("Unable to decode image")
+    }
 
     fun folderFor(conversationId: String): File =
         File(root, conversationId).apply { mkdirs() }
