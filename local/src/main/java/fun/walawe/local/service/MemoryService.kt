@@ -7,6 +7,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.sqrt
 
+@Deprecated("Replaced by RAG pipeline (EmbeddingEngine + VectorStore + ChunkDao)")
 @Singleton
 class MemoryService @Inject constructor(
     private val messageDao: MessageDao,

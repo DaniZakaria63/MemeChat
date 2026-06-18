@@ -9,6 +9,7 @@ import `fun`.walawe.local.dao.ConversationDao
 import `fun`.walawe.local.data.ConversationEntity
 import `fun`.walawe.local.dao.MessageDao
 import `fun`.walawe.local.data.MessageEntity
+import `fun`.walawe.local.service.LocalDatabaseService
 import `fun`.walawe.local.service.MemoryService
 import `fun`.walawe.memechat.data.ChatMLBuilder
 import `fun`.walawe.memechat.data.ImageDecoder
@@ -47,10 +48,8 @@ class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
     private val imageDecoder: ImageDecoder,
     private val inferenceEngine: InferenceEngine,
-    private val memoryService: MemoryService,
-    private val messageDao: MessageDao,
-    private val conversationDao: ConversationDao,
     private val imageStore: ImageStore,
+    private val localDBService: LocalDatabaseService,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized).also { flow ->
@@ -68,7 +67,7 @@ class ChatViewModel @Inject constructor(
     val messages = _messages.asStateFlow()
 
     val conversations: StateFlow<List<ConversationHistory>> =
-        conversationDao.getAllConversations().map { entities ->
+        localDBService.getAllConversations().map { entities ->
             entities.map { entity ->
                 ConversationHistory(
                     id = entity.id,
@@ -88,7 +87,7 @@ class ChatViewModel @Inject constructor(
         safeViewModelScope.launch {
             prepareModel()
             runCatching {
-                val validIds = conversationDao.getAllConversationIds().toSet()
+                val validIds = localDBService.getAllConversationIds().toSet()
                 imageStore.sweepOrphans(validIds)
             }
         }
@@ -107,17 +106,20 @@ class ChatViewModel @Inject constructor(
     fun loadConversation(conversationId: String) {
         Timber.d("loadConversation: start id=$conversationId")
         safeViewModelScope.launch {
-            _currentConversationId.value = conversationId
-            val conv = conversationDao.getConversation(conversationId)
+            val conv = localDBService.getConversation(conversationId)
             if (conv == null) {
                 Timber.w("loadConversation: conversation not found $conversationId")
                 return@launch
             }
+
+            _currentConversationId.value = conversationId
             currentConversationCreatedAt = conv.createdAt
             isKvCachePopulated = false
             _uiState.update { it.copy(isNewConversation = false) }
-            val entities = messageDao.getMessages(conversationId)
+
+            val entities = localDBService.getMessages(conversationId)
             Timber.d("loadConversation: got ${entities.size} entities from Room for $conversationId")
+
             val loaded = entities.reversed().map { entity ->
                 val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
@@ -140,7 +142,7 @@ class ChatViewModel @Inject constructor(
 
     fun deleteConversation(conversationId: String) {
         safeViewModelScope.launch {
-            conversationDao.delete(conversationId)
+            localDBService.deleteConversation(conversationId)
             imageStore.deleteConversationFolder(conversationId)
             if (_currentConversationId.value == conversationId) {
                 startNewConversation()
@@ -161,7 +163,7 @@ class ChatViewModel @Inject constructor(
         val conversationId = _currentConversationId.value ?: createNewConversation()
 
         safeViewModelScope.launch {
-            val augmentedInput = memoryService.augmentQuery(message)
+            //val augmentedInput = memoryService.augmentQuery(message)
             val userMsgId = UUID.randomUUID().toString()
             val assistantId = UUID.randomUUID().toString()
 
@@ -178,7 +180,7 @@ class ChatViewModel @Inject constructor(
             }
 
             if (isNewConversation) {
-                conversationDao.insert(ConversationEntity(
+                localDBService.insertConversation(ConversationEntity(
                     id = conversationId, title = message.take(50),
                     preview = message.take(80),
                     updatedAt = System.currentTimeMillis(),
@@ -186,7 +188,7 @@ class ChatViewModel @Inject constructor(
                 ))
             }
 
-            messageDao.insert(MessageEntity(
+            localDBService.insertMessage(MessageEntity(
                 id = userMsgId, conversationId = conversationId,
                 role = "User", text = message, reasoning = "",
                 timestamp = System.currentTimeMillis(), imageUri = persistedImagePath,
@@ -229,14 +231,14 @@ class ChatViewModel @Inject constructor(
             }
             isKvCachePopulated = true
 
-            messageDao.insert(MessageEntity(
+            localDBService.insertMessage(MessageEntity(
                 id = assistantId, conversationId = conversationId,
                 role = "Assistant", text = responseText,
                 reasoning = _messages.value.find { it.id == assistantId }?.reasoning ?: "",
                 timestamp = System.currentTimeMillis(),
             ))
 
-            conversationDao.update(
+            localDBService.updateConversation(
                 id = conversationId, title = message.take(50),
                 preview = responseText.take(80),
                 updatedAt = System.currentTimeMillis(),
