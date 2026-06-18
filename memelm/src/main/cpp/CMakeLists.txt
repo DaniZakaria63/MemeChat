@@ -85,6 +85,7 @@ message(STATUS "mtmd sources: ${MTMD_SOURCES}")
 add_library(${CMAKE_PROJECT_NAME} SHARED
         memelm.cpp
         LLMInference.cpp
+        EmbeddingEngine.cpp
         ${MTMD_SOURCES}
 )
 

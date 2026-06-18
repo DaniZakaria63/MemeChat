@@ -457,15 +457,12 @@ std::string LLMInference::processConversation(const char* chatML, bool resetFirs
     return generateTokens(512, cb);
 }
 
-// ── Context reset ─────────────
 void LLMInference::resetContext() {
     if (!m_ctx) {
         LOGw("resetContext: context is null, nothing to reset");
         return;
     }
 
-    // llama_kv_cache_seq_rm was removed in newer llama.cpp.
-    // Correct modern API: get the memory handle first, then call seq_rm on it.
     llama_memory_t mem = llama_get_memory(m_ctx);
     llama_memory_seq_rm(mem, 0, 0, -1);
 
@@ -497,7 +494,6 @@ bool LLMInference::isGenerating() const {
     return m_cancelFlag.load(std::memory_order_relaxed);
 }
 
-// ── Cleanup ──
 void LLMInference::release() {
     if (m_smpl)     { llama_sampler_free(m_smpl);  m_smpl     = nullptr; }
     if (m_mtmd_ctx) { mtmd_free(m_mtmd_ctx);       m_mtmd_ctx = nullptr; }
@@ -508,7 +504,6 @@ void LLMInference::release() {
     LOGi("release: all resources freed");
 }
 
-// ── File utilities ────────────
 static bool readFileHeader(const char* path, char* out, size_t len) {
     if (!path || !out || len == 0) return false;
     std::ifstream file(path, std::ios::binary);

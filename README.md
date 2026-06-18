@@ -1,22 +1,16 @@
 # Memelm
 
-**Memelm** is an Android application that runs the [MiniCPM](https://github.com/OpenBMB/MiniCPM) multimodal language model fully on-device. It leverages [llama.cpp](https://github.com/ggml-org/llama.cpp) under the hood via a JNI bridge, downloads model weights on demand, and wires everything together into a single integrated app — no cloud backend required.
+**Memelm** is an Android application that runs the [MiniCPM](https://github.com/OpenBMB/MiniCPM) multimodal language model fully on-device. It leverages [llama.cpp](https://github.com/ggml-org/llama.cpp) under the hood via a JNI bridge, downloads model weights on demand, and wires everything together into a single integrated app.
 
 ---
 
 ## Architecture Overview
 
-```
-memelm-android/
-├── app/          # Entry point — integrates all modules into the running application
-├── memelm/       # Core inference engine — MiniCPM via llama.cpp + JNI
-├── modelpull/    # Model downloader — fetches GGUF weights and mmproj via HTTP
-└── constant/     # Shared configuration — URLs, keys, and build-time constants
-```
+The modules are intentionally separated by responsibility. `constant` feeds into both `memelm` and `modelpull`. The `app` module sits at the top of the dependency graph and assembles everything. The app also runs a full on-device RAG pipeline. This way every message is preprocessed into chunks, converted into vectors, and stored in a local vector store for later retrieval. When you ask a question, relevant past context is pulled from the vector store and injected into the prompt, all without ever leaving your device.
 
-The modules are intentionally separated by responsibility. `constant` feeds into both `memelm` and `modelpull`. The `app` module sits at the top of the dependency graph and assembles everything.
-
-<img src="./docs/architecture.png" alt="Architecture Diagram" width="400"/>
+<p align="center">
+    <img src="./docs/architecture.jpg" alt="Architecture Diagram" width="500"/>
+</p>
 
 ---
 
@@ -24,15 +18,15 @@ The modules are intentionally separated by responsibility. `constant` feeds into
 
 Per-Friday/5/June/2026.
 
-https://github.com/user-attachments/assets/3806f5f4-ee26-4de9-b89e-91a1f61fade1
+<video src="./docs/latest-preview.mp4" controls width="100%"></video>
 
 ---
 
 ## Modules
 
-### `memelm` — On-Device Inference Engine
+### `memelm` — On-Device Inference & Embedding Engine
 
-This is the core library module responsible for loading and running the MiniCPM multimodal model entirely on the device.
+Two engines in one module: the main inference runtime for MiniCPM and a separate embedding engine for RAG vector generation.
 
 **Responsibilities:**
 - Bridges into [llama.cpp](https://github.com/ggerganov/llama.cpp) via the **Java Native Interface (JNI)**, exposing a Kotlin/Java API over the native C++ inference engine.
@@ -40,19 +34,47 @@ This is the core library module responsible for loading and running the MiniCPM 
 - Manages the llama.cpp context lifecycle. Including initialization, sampling, token generation, and teardown.
 - Handles tokenization and decoding for both text and image inputs.
 - Exposes a clean, suspendable API so inference can be called from coroutines without blocking the main thread.
+- Provides an **EmbeddingEngine** that loads a separate embedding GGUF model and converts text chunks into L2-normalized float vectors for FAISS.
 
 **Key internals:**
 
 | Layer | Technology |
 |---|---|
 | Inference runtime | llama.cpp (C++) |
+| Embedding runtime | llama.cpp (separate GGUF model, `LLAMA_POOLING_TYPE_MEAN`) |
 | Android integration | JNI (`System.loadLibrary`) |
 | Native build | CMake / Android NDK |
-| API surface | Kotlin (suspend functions / Flow) |
+| API surface | Kotlin (suspend functions / Flow, `EmbeddingEngine.embed()`) |
 
 > **Note:** 
 > - The native `.so` libraries are compiled for ABI `arm64-v8a` only and bundled inside this module's AAR.
 > - Sample specification from official llama.cpp at `LIB_REF_INFORMATION.md`
+
+---
+
+### `vector` — Vector Store Engine (FAISS)
+
+Native vector store built on FAISS for similarity search in the RAG pipeline.
+
+**Responsibilities:**
+- Bridges into [FAISS](https://github.com/facebookresearch/faiss) via JNI, exposing a Kotlin API over native C++ vector operations.
+- Manages an `IndexFlatIP` wrapped in `IndexIDMap` for exact inner-product (cosine) search with 64-bit IDs.
+- Supports add, search, remove, save, and load — all thread-safe behind a `std::mutex`.
+- Persists the index to disk via FAISS native `write_index` / `read_index` binary format.
+- Auto-creates the index on first insert (dimension detected from vector length).
+
+**Key internals:**
+
+| Layer | Technology |
+|---|---|
+| Vector search | FAISS (`IndexFlatIP` + `IndexIDMap`) |
+| Android integration | JNI (`System.loadLibrary`) |
+| Native build | CMake / Android NDK (`add_subdirectory` of the `faiss/` submodule) |
+| API surface | `VectorStore` Kotlin singleton (`init`, `add`, `search`, `remove`, `save`, `release`) |
+
+> **Note:**
+> - FAISS is compiled from source via `add_subdirectory` (same pattern as `llama.cpp` in `:memelm`).
+> - Disabled: GPU, Python, C API, MKL, SIMD extras — only the flat index code path is built.
 
 ---
 
@@ -76,14 +98,16 @@ This module handles everything related to fetching model files from a remote sou
 
 ---
 
-### `local` — Conversation Local History 
+### `local` — Conversation Local History & RAG Orchestrator
 
-This RoomDB persistance module only to maintain the conversation memory to support the chat environment.
-Naive RAG is only due by query + best_matching_record = augmented_input.
+RoomDB persistence for chat history and the RAG pipeline orchestrator that bridges text chunks with the vector store.
+`ChunkEntity` stores text fragments keyed by `faissId` — the shared link between Room text and FAISS vectors.
 
 **Responsibilities:**
 - Main place to save conversation history across app.
-- Past  messages retrieval and processing to get augmented_input.
+- Preprocesses messages (OpenNLP sentence detection + tokenization) and splits them into embeddable chunks.
+- Orchestrates the RAG pipeline: chunk → embed via `EmbeddingEngine` → store vector in `VectorStore` + text in `ChunkEntity`.
+- Retrieves relevant chunks by querying `VectorStore.search()` → `ChunkDao.getChunksByFaissIds()` for context injection.
 - Have **conversation list** so the user can just select conversation they want.
 - Ability to save image locally and save the path as copy Uri.
 - The sentence save as given llm style which markdown, so the display use markdown style renderer 
@@ -93,6 +117,8 @@ Naive RAG is only due by query + best_matching_record = augmented_input.
 | Concern | Technology                                     |
 |---|------------------------------------------------|
 | RoomDB | [Room](https://developer.android.com/jetpack/androidx/releases/room)     |
+| Text preprocessing | OpenNLP (`sentence detector` + `tokenizer`) |
+| Chunk storage | `ChunkEntity` (Room, indexed `faissId`) |
 | Markdown | [Halilibo](https://halilibo.com/compose-richtext/) |
 
 ---
@@ -170,10 +196,21 @@ cp -r SPIRV-Headers/include/spirv \
 ```
 // app/build.gradle
 dependencies {
+    implementation(project(":local"))
     implementation(project(":memelm"))
     implementation(project(":modelpull"))
     implementation(project(":constant"))
 }
+
+// local/build.gradle
+dependencies {
+    implementation(project(":memelm"))    // EmbeddingEngine
+    implementation(project(":vector"))    // VectorStore
+    implementation(project(":constant"))
+}
+
+// vector/build.gradle
+// no Gradle module deps (pure JNI + FAISS C++)
 
 // memelm/build.gradle
 dependencies {

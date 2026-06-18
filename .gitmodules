@@ -1,3 +1,7 @@
 [submodule "llama.cpp"]
 	path = llama.cpp
 	url = https://github.com/ggerganov/llama.cpp
+[submodule "faiss"]
+	path = faiss
+	url = https://github.com/facebookresearch/faiss
+	shallow = true
