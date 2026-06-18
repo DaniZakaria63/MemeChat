@@ -41,8 +41,6 @@ public:
     void resetContext();
     void release();
 
-    llama_model* getModel() const { return m_model; }
-
 private:
     llama_model*       m_model    = nullptr;
     llama_context*     m_ctx      = nullptr;
