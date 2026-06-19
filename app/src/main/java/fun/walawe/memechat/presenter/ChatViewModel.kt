@@ -5,8 +5,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
+import `fun`.walawe.local.data.ChunkEntity
 import `fun`.walawe.local.data.ConversationEntity
 import `fun`.walawe.local.data.MessageEntity
+import `fun`.walawe.local.service.ChunkHandlerService
 import `fun`.walawe.local.service.LocalDatabaseService
 import `fun`.walawe.memechat.data.ChatMLBuilder
 import `fun`.walawe.memechat.data.ModelRepository
@@ -37,6 +39,7 @@ import java.util.Locale
 import java.util.UUID
 import timber.log.Timber
 import `fun`.walawe.memechat.data.ImageManipulation
+import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
 
 @HiltViewModel
@@ -45,6 +48,8 @@ class ChatViewModel @Inject constructor(
     private val inferenceEngine: InferenceEngine,
     private val imageManipulation: ImageManipulation,
     private val localDBService: LocalDatabaseService,
+    private val embeddingEngine: EmbeddingEngine,
+    private val chunkHandlerService: ChunkHandlerService,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized).also { flow ->
@@ -112,10 +117,10 @@ class ChatViewModel @Inject constructor(
             isKvCachePopulated = false
             _uiState.update { it.copy(isNewConversation = false) }
 
-            val entities = localDBService.getMessages(conversationId)
-            Timber.d("loadConversation: got ${entities.size} entities from Room for $conversationId")
+            val messages = localDBService.getMessages(conversationId)
+            Timber.d("loadConversation: got ${messages.size} entities from Room for $conversationId")
 
-            val loaded = entities.reversed().map { entity ->
+            val loaded = messages.reversed().map { entity ->
                 val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
                     id = entity.id,
@@ -158,30 +163,63 @@ class ChatViewModel @Inject constructor(
         val conversationId = _currentConversationId.value ?: createNewConversation()
 
         safeViewModelScope.launch {
-            //val augmentedInput = memoryService.augmentQuery(message)
             val userMsgId = UUID.randomUUID().toString()
             val assistantId = UUID.randomUUID().toString()
 
-            val persistedImagePath: String? = transientImageUri?.let { uriString ->
-                imageManipulation.copyToInternal(
-                    src = uriString.toUri(),
-                    conversationId = conversationId,
-                    messageId = userMsgId,
-                )
-            }
-            if (transientImageUri != null && persistedImagePath == null) {
-                postError("Failed to attach image")
-                return@launch
-            }
+            /**
+             * Preprocess Image
+             * This will return clean chunk
+             */
+            val chunkList = preprocessTextAndImage(
+                transientImageUri = transientImageUri,
+                conversationId = conversationId,
+                messageId = userMsgId,
+                message = message
+            )
+
+            val chunkTextOnlyList = chunkList
+                .sortedBy { it.sequence }
+                .map { it.text }
 
             if (isNewConversation) {
                 localDBService.insertConversation(ConversationEntity(
-                    id = conversationId, title = message.take(50),
-                    preview = message.take(80),
+                    id = conversationId,
+                    title = chunkTextOnlyList.first().take(50),
+                    preview = chunkTextOnlyList.first().take(80),
                     updatedAt = System.currentTimeMillis(),
                     createdAt = currentConversationCreatedAt,
                 ))
             }
+
+            // Embedding Vector Search
+            val chunkEmbedBuffer = mutableListOf<ChunkEntity>()
+            chunkList.forEach {
+                val embeddingVector = embeddingEngine.embed(it.text)
+                val chunkSimilarity = chunkHandlerService.searchChunks( embeddingVector)
+                chunkEmbedBuffer += chunkSimilarity
+            }
+
+            // LLM Prompt
+            // TODO: Create prompt builder
+
+            val imageBitmap = transientImageUri?.let { path ->
+                withContext(Dispatchers.IO) { imageManipulation.decode(Uri.fromFile(File(path))) }
+            }
+            val outputFlow = if (imageBitmap != null) {
+                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
+            } else {
+                inferenceEngine.sendConversation(chatML, resetFirst, forReasoning)
+            }
+            outputFlow.collect { (state, token) ->
+                when (state) {
+                    STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
+                    STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
+                }
+            }
+
+            // Room and Vector Persistence
+
+            // Message retrieval
 
             localDBService.insertMessage(MessageEntity(
                 id = userMsgId, conversationId = conversationId,
@@ -199,9 +237,6 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(isNewConversation = false) }
 
             var responseText = ""
-            val imageBitmap = persistedImagePath?.let { path ->
-                withContext(Dispatchers.IO) { imageManipulation.decode(Uri.fromFile(File(path))) }
-            }
 
             val resetFirst = !isKvCachePopulated
             val chatML = when {
@@ -213,17 +248,6 @@ class ChatViewModel @Inject constructor(
                 else -> ""
             }
 
-            val outputFlow = if (imageBitmap != null) {
-                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
-            } else {
-                inferenceEngine.sendConversation(chatML, resetFirst, forReasoning)
-            }
-            outputFlow.collect { (state, token) ->
-                when (state) {
-                    STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
-                    STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
-                }
-            }
             isKvCachePopulated = true
 
             localDBService.insertMessage(MessageEntity(
@@ -254,7 +278,28 @@ class ChatViewModel @Inject constructor(
     override fun onCleared() {
         inferenceEngine.cancelGeneration()
         inferenceEngine.destroy()
+        embeddingEngine.release()
+        chunkHandlerService.releaseVectorStore()
         super.onCleared()
+    }
+
+    private suspend fun preprocessTextAndImage(
+        transientImageUri: String?,
+        conversationId: String,
+        messageId: String,
+        message: String,
+    ): List<ChunkEntity>{
+        if (transientImageUri.isNullOrBlank()) {
+            postError("Failed to attach image")
+        }
+
+        imageManipulation.copyToInternal(
+            src = transientImageUri!!.toUri(),
+            conversationId = conversationId,
+            messageId = messageId,
+        )
+
+        return chunkHandlerService.preprocessAndChunk(messageId, message)
     }
 
     private suspend fun prepareModel() {
@@ -268,19 +313,27 @@ class ChatViewModel @Inject constructor(
             return
         }
 
+        val embeddingAbsolutePath = modelRepository.getCachedModel(CacheKey.Embedding).getOrElse { error ->
+            postError(error.message ?: "Embedding model is not downloaded yet")
+            return
+        }
+
+        val vectorDBAbsolutePath = modelRepository.getVectorDBPath()
+
         _uiState.update { it.copy(isNewConversation = true) }
-        loadModel(modelAbsolutePath, mmprojAbsolutePath)
+        loadModel(modelAbsolutePath, mmprojAbsolutePath, embeddingAbsolutePath, vectorDBAbsolutePath)
     }
 
-    private fun loadModel(model: String, mmproj: String) {
+    private fun loadModel(model: String, mmproj: String, embedding: String, vectorDB: String) {
         safeViewModelScope.launch {
             inferenceEngine.loadModel(
                 pathToModel = model,
                 pathToMMProj = mmproj,
                 params = InferenceParams.getDefault()
-            ).also {
-                inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
-            }
+            )
+            inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
+            embeddingEngine.init(embedding)
+            chunkHandlerService.initVectorStore(vectorDB)
         }
     }
 

@@ -3,6 +3,7 @@ package `fun`.walawe.memechat.data
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 
+@Deprecated("Use ChatEmbedBuilder instead. This class is used due to Naive RAG. Now using advanced RAG, so this class became not relevant")
 object ChatMLBuilder {
     private const val IM_START = "<|im_start|>"
     private const val IM_END = "<|im_end|>"

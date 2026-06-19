@@ -45,6 +45,6 @@ class ModelCache @Inject constructor() {
 enum class CacheKey {
     Model,
     MMPROJ,
-    EMBEDDING,
+    Embedding,
     ALL,
 }
