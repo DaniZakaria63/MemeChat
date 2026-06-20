@@ -122,7 +122,7 @@ class ChatViewModel @Inject constructor(
                     id = entity.id,
                     role = entity.role.getChatRole(),
                     text = entity.text,
-                    timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(entity.timestamp)),
+                    timestamp = currentTime(entity.timestamp),
                     imageUri = safeImage,
                     reasoning = entity.reasoning,
                 )
@@ -158,6 +158,20 @@ class ChatViewModel @Inject constructor(
         safeViewModelScope.launch {
             val userMsgId = UUID.randomUUID().toString()
             val assistantId = UUID.randomUUID().toString()
+            val userMessage = ChatMessage(
+                id = userMsgId,
+                role = ChatRole.User,
+                text = message,
+                timestamp = currentTime(currentTimeMilis),
+                imageUri = transientImageUri
+            )
+            val assistantMessage = ChatMessage(
+                id = assistantId,
+                role = ChatRole.Assistant,
+                text = "",
+                timestamp = "",
+                isStreaming = true
+            )
 
             /**
              * Preprocess Image
@@ -183,6 +197,8 @@ class ChatViewModel @Inject constructor(
                     createdAt = currentTimeMilis,
                 ))
             }
+            _messages.update { listOf(assistantMessage, userMessage) + it }
+            _uiState.update { it.copy(isNewConversation = false) }
 
             /**
              * Embedding Vector Search
@@ -232,31 +248,6 @@ class ChatViewModel @Inject constructor(
             /**
              * Room and Vector Persistence
              */
-            chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
-                chunkHandlerService.storeChunk(chunk, vector)
-            }
-            chunkHandlerService.saveFileChunk()
-
-            /**
-             * Message update and retrieval
-             */
-            val userMessage = ChatMessage(
-                id = userMsgId,
-                role = ChatRole.User,
-                text = message,
-                timestamp = currentTime(currentTimeMilis),
-                imageUri = transientImageUri
-            )
-            val assistantMessage = ChatMessage(
-                id = assistantId,
-                role = ChatRole.Assistant,
-                text = "",
-                timestamp = "",
-                isStreaming = true
-            )
-            _messages.update { listOf(assistantMessage, userMessage) + it }
-            _uiState.update { it.copy(isNewConversation = false) }
-
             localDBService.insertMessage(MessageEntity(
                 id = userMsgId,
                 conversationId = conversationId,
@@ -267,6 +258,14 @@ class ChatViewModel @Inject constructor(
                 imageUri = transientImageUri,
             ))
 
+            chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
+                chunkHandlerService.storeChunk(chunk, vector)
+            }
+            chunkHandlerService.saveFileChunk()
+
+            /**
+             * Message update and retrieval
+             */
             //Because inference response is asynchronous
             val responseAsistantMessage = _messages.value.find { it.id == assistantId }
             localDBService.insertMessage(MessageEntity(

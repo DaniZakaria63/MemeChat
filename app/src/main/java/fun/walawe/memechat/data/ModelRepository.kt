@@ -18,9 +18,10 @@ class ModelRepository @Inject constructor(
     private val modelCache: ModelCache,
 ) {
     suspend fun getCachedModel(key: CacheKey): Result<String> = withContext(Dispatchers.IO) {
-        val cached = modelCache.getModel(key)
-        if(cached != null) Result.success(resolveModelPath(cached))
-        Result.failure(IllegalStateException("Model not downloaded yet"))
+        val cached = modelCache.getModel(key) ?: return@withContext Result.failure(
+            IllegalStateException("Model not downloaded yet")
+        )
+        Result.success(resolveModelPath(cached))
     }
 
     suspend fun getVectorDBPath(): String = withContext(Dispatchers.IO) {

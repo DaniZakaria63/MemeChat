@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <mutex>
 #include <new>
+#include <sys/stat.h>
 #include <faiss/IndexFlat.h>
 #include <faiss/IndexIDMap.h>
 #include <faiss/index_io.h>
@@ -28,6 +29,11 @@ static faiss::IndexIDMap* createFreshIndex(int dim) {
 }
 
 static faiss::IndexIDMap* loadIndex(const char* path) {
+    struct stat st;
+    if (stat(path, &st) != 0 || st.st_size == 0) {
+        LOGI("No checkpoint at %s, will lazy-create on first add", path);
+        return nullptr;
+    }
     try {
         auto* loaded = faiss::read_index(path);
         auto* idmap = dynamic_cast<faiss::IndexIDMap*>(loaded);
