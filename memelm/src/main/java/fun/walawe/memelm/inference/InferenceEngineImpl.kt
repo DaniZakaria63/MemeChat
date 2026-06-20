@@ -203,11 +203,10 @@ class InferenceEngineImpl private constructor(
         }
 
     override fun sendConversation(
-        chatML: String,
-        resetFirst: Boolean,
+        prompt: String,
         forReasoning: Boolean,
     ): Flow<Pair<STATE, String>> = callbackFlow {
-        require(chatML.isNotEmpty()) { "User prompt cannot be empty" }
+        require(prompt.isNotEmpty()) { "User prompt cannot be empty" }
         check(state.value.isModelLoaded) { "Model not ready" }
 
         _state.value = InferenceEngine.State.Generating
@@ -233,7 +232,7 @@ class InferenceEngineImpl private constructor(
                 }
                 override fun onComplete() { close() }
             }
-            nativeProcessConversation(chatML, resetFirst, callback)
+            nativeProcessConversation(prompt, true, callback) //TODO: Validate this later
         } catch (e: CancellationException) {
             _state.value = InferenceEngine.State.ModelReady; close(); throw e
         } catch (e: Exception) {
@@ -246,7 +245,6 @@ class InferenceEngineImpl private constructor(
     override fun sendConversationWithImage(
         bitmap: Bitmap,
         message: String,
-        resetFirst: Boolean,
         forReasoning: Boolean,
     ): Flow<Pair<STATE, String>> = callbackFlow {
         check(state.value.isModelLoaded) { "Model not ready" }
@@ -275,7 +273,7 @@ class InferenceEngineImpl private constructor(
                 }
                 override fun onComplete() { close() }
             }
-            nativeProcessImageAndText(scaledBitmap, message, resetFirst, forReasoning, callback)
+            nativeProcessImageAndText(scaledBitmap, message, true, forReasoning, callback) // TODO: Validate this later
         } catch (e: CancellationException) {
             _state.value = InferenceEngine.State.ModelReady; close(); throw e
         } catch (e: Exception) {

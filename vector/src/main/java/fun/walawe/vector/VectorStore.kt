@@ -1,10 +1,15 @@
 package `fun`.walawe.vector
 
+import java.io.FileNotFoundException
+
 object VectorStore {
     data class SearchResult(val id: Long, val score: Float)
+    var localFilePath: String? = null
 
-    fun init(checkpointPath: String? = null): Boolean =
-        nativeInit(checkpointPath)
+    fun init(checkpointPath: String? = null): Boolean {
+        localFilePath = checkpointPath
+        return nativeInit(checkpointPath)
+    }
 
     fun add(id: Long, embedding: FloatArray) =
         nativeAdd(id, embedding)
@@ -13,7 +18,12 @@ object VectorStore {
         nativeSearch(queryEmbedding, topK).toList()
 
     fun remove(id: Long) = nativeRemove(id)
-    fun save(path: String) = nativeSave(path)
+    fun save() {
+        val path = localFilePath.orEmpty().ifEmpty {
+            throw IllegalAccessException("File path is unknown or empty")
+        }
+        nativeSave(path)
+    }
     fun release() = nativeRelease()
     fun size(): Int = nativeSize()
     fun dimension(): Int = nativeDimension()

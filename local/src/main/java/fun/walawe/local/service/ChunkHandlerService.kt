@@ -12,18 +12,17 @@ import javax.inject.Singleton
 @Singleton
 class ChunkHandlerService @Inject constructor(
     private val preprocess: PreprocessTextService,
-    private val chunkDao: ChunkDao,
-    private val vectorStore: VectorStore,
+    private val chunkDao: ChunkDao
 ) {
     private val faissIdCounter = AtomicLong(System.currentTimeMillis())
 
     fun initVectorStore(checkpointPath: String? = null) {
-        vectorStore.init(checkpointPath)
-        Timber.d("VectorStore initialized (dim=%d, size=%d)", vectorStore.dimension(), vectorStore.size())
+        VectorStore.init(checkpointPath)
+        Timber.d("VectorStore initialized (dim=%d, size=%d)", VectorStore.dimension(), VectorStore.size())
     }
 
     fun releaseVectorStore() {
-        vectorStore.release()
+        VectorStore.release()
     }
 
     suspend fun preprocessAndChunk(messageId: String, text: String): List<ChunkEntity> {
@@ -32,8 +31,12 @@ class ChunkHandlerService @Inject constructor(
     }
 
     suspend fun storeChunk(chunk: ChunkEntity, vector: FloatArray) {
-        vectorStore.add(chunk.faissId, vector)
+        VectorStore.add(chunk.faissId, vector)
         chunkDao.insert(chunk)
+    }
+
+    fun saveFileChunk(){
+        VectorStore.save()
     }
 
     /**
@@ -49,7 +52,7 @@ class ChunkHandlerService @Inject constructor(
         topK: Int = 5,
         minScore: Float = 0.5f,
     ): List<ChunkEntity> {
-        val matches = vectorStore.search(queryVector, topK)
+        val matches = VectorStore.search(queryVector, topK)
         val relevant = matches.filter { it.score >= minScore }
         if (relevant.isEmpty()) return emptyList()
         return chunkDao.getChunksByFaissIds(relevant.map { it.id })
@@ -58,7 +61,7 @@ class ChunkHandlerService @Inject constructor(
     suspend fun deleteConversationChunks(conversationId: String) {
         val chunks = chunkDao.getChunksByConversation(conversationId)
         if (chunks.isEmpty()) return
-        chunks.forEach { vectorStore.remove(it.faissId) }
+        chunks.forEach { VectorStore.remove(it.faissId) }
         Timber.d("Removed %d vectors for conversation %s", chunks.size, conversationId)
     }
 }

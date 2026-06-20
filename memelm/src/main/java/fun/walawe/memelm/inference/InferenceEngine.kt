@@ -12,12 +12,11 @@ interface InferenceEngine {
 
     suspend fun setSystemPrompt(systemPrompt: String)
 
-    fun sendConversation(chatML: String, resetFirst: Boolean, forReasoning: Boolean = false): Flow<Pair<STATE, String>>
+    fun sendConversation(chatML: String, forReasoning: Boolean = false): Flow<Pair<STATE, String>>
 
     fun sendConversationWithImage(
         bitmap: Bitmap,
         message: String,
-        resetFirst: Boolean,
         forReasoning: Boolean,
     ): Flow<Pair<STATE, String>>
 

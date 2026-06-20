@@ -6,6 +6,13 @@ enum class ChatRole {
     System,
 }
 
+fun String.getChatRole(): ChatRole =
+    when (this) {
+        "User" -> ChatRole.User
+        "Assistant" -> ChatRole.Assistant
+        else -> ChatRole.System
+    }
+
 data class ChatMessage(
     val id: String,
     val role: ChatRole,

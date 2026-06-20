@@ -1,5 +1,6 @@
 package `fun`.walawe.memechat.presenter
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
@@ -10,7 +11,7 @@ import `fun`.walawe.local.data.ConversationEntity
 import `fun`.walawe.local.data.MessageEntity
 import `fun`.walawe.local.service.ChunkHandlerService
 import `fun`.walawe.local.service.LocalDatabaseService
-import `fun`.walawe.memechat.data.ChatMLBuilder
+import `fun`.walawe.memechat.data.ChatEmbedBuilder
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
@@ -39,8 +40,10 @@ import java.util.Locale
 import java.util.UUID
 import timber.log.Timber
 import `fun`.walawe.memechat.data.ImageManipulation
+import `fun`.walawe.memechat.model.getChatRole
 import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
+import kotlin.collections.indexOfFirst
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -66,6 +69,9 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
+    private val _currentConversationId = MutableStateFlow<String?>(null)
+    val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
+
     val conversations: StateFlow<List<ConversationHistory>> =
         localDBService.getAllConversations().map { entities ->
             entities.map { entity ->
@@ -77,11 +83,6 @@ class ChatViewModel @Inject constructor(
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _currentConversationId = MutableStateFlow<String?>(null)
-    val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
-    private var currentConversationCreatedAt: Long = 0L
-    private var isKvCachePopulated = false
 
     init {
         safeViewModelScope.launch {
@@ -96,10 +97,9 @@ class ChatViewModel @Inject constructor(
     fun startNewConversation() {
         safeViewModelScope.launch {
             _messages.value = emptyList()
+            _currentConversationId.value = null
             _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
             inferenceEngine.cancelGeneration()
-            _currentConversationId.value = null
-            isKvCachePopulated = false
         }
     }
 
@@ -113,22 +113,14 @@ class ChatViewModel @Inject constructor(
             }
 
             _currentConversationId.value = conversationId
-            currentConversationCreatedAt = conv.createdAt
-            isKvCachePopulated = false
             _uiState.update { it.copy(isNewConversation = false) }
 
             val messages = localDBService.getMessages(conversationId)
-            Timber.d("loadConversation: got ${messages.size} entities from Room for $conversationId")
-
             val loaded = messages.reversed().map { entity ->
                 val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
                     id = entity.id,
-                    role = when (entity.role) {
-                        "User" -> ChatRole.User
-                        "Assistant" -> ChatRole.Assistant
-                        else -> ChatRole.System
-                    },
+                    role = entity.role.getChatRole(),
                     text = entity.text,
                     timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(entity.timestamp)),
                     imageUri = safeImage,
@@ -160,7 +152,8 @@ class ChatViewModel @Inject constructor(
         val transientImageUri = _uiState.value.selectedImageUri
         val forReasoning = _uiState.value.isThinkingEnabled
         val isNewConversation = _currentConversationId.value == null
-        val conversationId = _currentConversationId.value ?: createNewConversation()
+        val conversationId = _currentConversationId.value ?: UUID.randomUUID().toString()
+        val currentTimeMilis = System.currentTimeMillis()
 
         safeViewModelScope.launch {
             val userMsgId = UUID.randomUUID().toString()
@@ -170,7 +163,7 @@ class ChatViewModel @Inject constructor(
              * Preprocess Image
              * This will return clean chunk
              */
-            val chunkList = preprocessTextAndImage(
+            val (chunkList, imageBitmap) = preprocessTextAndImage(
                 transientImageUri = transientImageUri,
                 conversationId = conversationId,
                 messageId = userMsgId,
@@ -186,93 +179,115 @@ class ChatViewModel @Inject constructor(
                     id = conversationId,
                     title = chunkTextOnlyList.first().take(50),
                     preview = chunkTextOnlyList.first().take(80),
-                    updatedAt = System.currentTimeMillis(),
-                    createdAt = currentConversationCreatedAt,
+                    updatedAt = currentTimeMilis,
+                    createdAt = currentTimeMilis,
                 ))
             }
 
-            // Embedding Vector Search
+            /**
+             * Embedding Vector Search
+             * Process embedding using embedding model
+             * Search vector in local vector db
+             */
             val chunkEmbedBuffer = mutableListOf<ChunkEntity>()
+            val embeddingVectorBuffer = mutableListOf<FloatArray>()
             chunkList.forEach {
-                val embeddingVector = embeddingEngine.embed(it.text)
+                val embeddingVector = withContext(Dispatchers.IO){
+                    embeddingEngine.embed(it.text)
+                }
+                embeddingVectorBuffer += embeddingVector
+
                 val chunkSimilarity = chunkHandlerService.searchChunks( embeddingVector)
                 chunkEmbedBuffer += chunkSimilarity
             }
 
-            // LLM Prompt
-            // TODO: Create prompt builder
+            val constructiveContextMessages = chunkEmbedBuffer
+                .distinctBy { it.id }
+                .sortedBy { it.sequence }
+                .map { it.text }
 
-            val imageBitmap = transientImageUri?.let { path ->
-                withContext(Dispatchers.IO) { imageManipulation.decode(Uri.fromFile(File(path))) }
-            }
-            val outputFlow = if (imageBitmap != null) {
-                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
+            val constructedPrompt = ChatEmbedBuilder.buildWithContext(
+                systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
+                contextHistory = constructiveContextMessages,
+                currentMessage = message,
+                forReasoning = forReasoning,
+            )
+
+            /**
+             * LLM Process Prompt
+             */
+            val inferenceOutputFlow = if (imageBitmap == null) {
+                inferenceEngine.sendConversation(constructedPrompt, forReasoning)
             } else {
-                inferenceEngine.sendConversation(chatML, resetFirst, forReasoning)
+                inferenceEngine.sendConversationWithImage(imageBitmap, constructedPrompt, forReasoning)
             }
-            outputFlow.collect { (state, token) ->
+
+            inferenceOutputFlow.collect { (state, token) ->
                 when (state) {
                     STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
-                    STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
+                    STATE.ANSWER -> appendToAssistant(assistantId, token)
                 }
             }
 
-            // Room and Vector Persistence
+            /**
+             * Room and Vector Persistence
+             */
+            chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
+                chunkHandlerService.storeChunk(chunk, vector)
+            }
+            chunkHandlerService.saveFileChunk()
 
-            // Message retrieval
-
-            localDBService.insertMessage(MessageEntity(
-                id = userMsgId, conversationId = conversationId,
-                role = "User", text = message, reasoning = "",
-                timestamp = System.currentTimeMillis(), imageUri = persistedImagePath,
-            ))
-
-            val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
-                text = message, timestamp = currentTime(), imageUri = persistedImagePath)
-            val assistantMessage = ChatMessage(id = assistantId, role = ChatRole.Assistant,
-                text = "", timestamp = "", isStreaming = true)
-
-            val existingHistory = _messages.value.toList()
+            /**
+             * Message update and retrieval
+             */
+            val userMessage = ChatMessage(
+                id = userMsgId,
+                role = ChatRole.User,
+                text = message,
+                timestamp = currentTime(currentTimeMilis),
+                imageUri = transientImageUri
+            )
+            val assistantMessage = ChatMessage(
+                id = assistantId,
+                role = ChatRole.Assistant,
+                text = "",
+                timestamp = "",
+                isStreaming = true
+            )
             _messages.update { listOf(assistantMessage, userMessage) + it }
             _uiState.update { it.copy(isNewConversation = false) }
 
-            var responseText = ""
-
-            val resetFirst = !isKvCachePopulated
-            val chatML = when {
-                imageBitmap == null && resetFirst -> ChatMLBuilder.buildFullFromHistory(
-                    DEFAULT_MODEL_SYSTEM_PROMPT,
-                    existingHistory.reversed() + userMessage,
-                    forReasoning)
-                imageBitmap == null -> ChatMLBuilder.buildTurn(augmentedInput, forReasoning)
-                else -> ""
-            }
-
-            isKvCachePopulated = true
-
             localDBService.insertMessage(MessageEntity(
-                id = assistantId, conversationId = conversationId,
-                role = "Assistant", text = responseText,
-                reasoning = _messages.value.find { it.id == assistantId }?.reasoning ?: "",
-                timestamp = System.currentTimeMillis(),
+                id = userMsgId,
+                conversationId = conversationId,
+                role = ChatRole.User.name,
+                text = message,
+                reasoning = "",
+                timestamp = currentTimeMilis,
+                imageUri = transientImageUri,
+            ))
+
+            //Because inference response is asynchronous
+            val responseAsistantMessage = _messages.value.find { it.id == assistantId }
+            localDBService.insertMessage(MessageEntity(
+                id = assistantId,
+                conversationId = conversationId,
+                role = ChatRole.Assistant.name,
+                text = "",
+                reasoning = responseAsistantMessage?.reasoning.orEmpty(),
+                timestamp = currentTimeMilis,
             ))
 
             localDBService.updateConversation(
-                id = conversationId, title = message.take(50),
-                preview = responseText.take(80),
-                updatedAt = System.currentTimeMillis(),
+                id = conversationId,
+                title = message.take(50),
+                preview = responseAsistantMessage?.text.orEmpty().take(80),
+                updatedAt = currentTimeMilis,
             )
             Timber.d("sendMessage: saved assistant msg + updated conversation $conversationId")
 
             finishAssistantStream(assistantId)
         }
-    }
-
-    private fun createNewConversation(): String {
-        val id = UUID.randomUUID().toString()
-        currentConversationCreatedAt = System.currentTimeMillis()
-        _currentConversationId.value = id
-        return id
     }
 
     override fun onCleared() {
@@ -288,18 +303,23 @@ class ChatViewModel @Inject constructor(
         conversationId: String,
         messageId: String,
         message: String,
-    ): List<ChunkEntity>{
-        if (transientImageUri.isNullOrBlank()) {
-            postError("Failed to attach image")
+    ): Pair<List<ChunkEntity>, Bitmap?>{
+
+        val bitmap = transientImageUri?.let {
+            imageManipulation.copyToInternal(
+                src = it.toUri(),
+                conversationId = conversationId,
+                messageId = messageId,
+            )
+
+            withContext(Dispatchers.IO) {
+                imageManipulation.decode(Uri.fromFile(File(it)))
+            }
         }
 
-        imageManipulation.copyToInternal(
-            src = transientImageUri!!.toUri(),
-            conversationId = conversationId,
-            messageId = messageId,
-        )
+        val preprocessChunk = chunkHandlerService.preprocessAndChunk(messageId, message)
 
-        return chunkHandlerService.preprocessAndChunk(messageId, message)
+        return Pair(preprocessChunk, bitmap)
     }
 
     private suspend fun prepareModel() {
@@ -325,7 +345,7 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun loadModel(model: String, mmproj: String, embedding: String, vectorDB: String) {
-        safeViewModelScope.launch {
+        safeViewModelScope.launch(Dispatchers.IO) {
             inferenceEngine.loadModel(
                 pathToModel = model,
                 pathToMMProj = mmproj,
@@ -351,7 +371,9 @@ class ChatViewModel @Inject constructor(
         updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
 
     fun finishAssistantStream(id: String) =
-        updateAssistantMessage(id) { it.copy(isStreaming = false, timestamp = currentTime()) }
+        updateAssistantMessage(id) {
+            it.copy(isStreaming = false, timestamp = currentTime(System.currentTimeMillis()))
+        }
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }
@@ -366,8 +388,8 @@ class ChatViewModel @Inject constructor(
         errorState.update { message }
     }
 
-    private fun currentTime(): String {
+    private fun currentTime(timeMilis: Long): String {
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-        return formatter.format(System.currentTimeMillis())
+        return formatter.format(timeMilis)
     }
 }
