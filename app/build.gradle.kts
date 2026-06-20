@@ -46,6 +46,9 @@ android {
         resources {
             excludes += "/META-INF/DEPENDENCIES"
         }
+        jniLibs {
+            pickFirsts += listOf("**/libomp.so")
+        }
     }
 }
 

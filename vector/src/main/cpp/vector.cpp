@@ -37,7 +37,7 @@ static faiss::IndexIDMap* loadIndex(const char* path) {
         LOGI("Loaded index from %s (dim=%d, ntotal=%zd)", path, idmap->d, idmap->ntotal);
         return idmap;
     } catch (const faiss::FaissException& e) {
-        LOGE("Failed to load index from %s: %s", path, e.what());
+        LOGE("Corrupt checkpoint at %s: %s", path, e.what());
         return nullptr;
     } catch (const std::exception& e) {
         LOGE("Unexpected error loading index: %s", e.what());

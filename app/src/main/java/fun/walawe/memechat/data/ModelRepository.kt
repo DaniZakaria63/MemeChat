@@ -18,14 +18,22 @@ class ModelRepository @Inject constructor(
     private val modelCache: ModelCache,
 ) {
     suspend fun getCachedModel(key: CacheKey): Result<String> = withContext(Dispatchers.IO) {
-        val cached = modelCache.getModel(key) ?: return@withContext Result.failure(
-            IllegalStateException("Model not downloaded yet")
-        )
-        Result.success(resolveModelPath(cached))
+        val cached = modelCache.getModel(key)
+        if(cached != null) Result.success(resolveModelPath(cached))
+        Result.failure(IllegalStateException("Model not downloaded yet"))
     }
 
-    fun getVectorDBPath(): String =
-        File(context.filesDir, DEFAULT_FILENAME_FAISS_PERSISTANCE).absolutePath
+    suspend fun getVectorDBPath(): String = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, DEFAULT_FILENAME_FAISS_PERSISTANCE)
+        if(file.exists()) return@withContext file.absolutePath
+
+        context.assets.open("init.faiss").use { src ->
+            file.outputStream().use { dst ->
+                src.copyTo(dst)
+            }
+        }
+        file.absolutePath
+    }
 
     fun clearCache(): Result<Unit> = modelCache.deleteAllCachedFiles()
 
