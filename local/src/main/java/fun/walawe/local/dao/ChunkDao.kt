@@ -8,8 +8,8 @@ import `fun`.walawe.local.data.ChunkEntity
 
 @Dao
 interface ChunkDao {
-    @Query("SELECT * FROM chunks WHERE faissId IN (:faissIds) ORDER BY sequence ASC")
-    suspend fun getChunksByFaissIds(faissIds: List<Long>): List<ChunkEntity>
+    @Query("SELECT * FROM chunks WHERE faissId IN (:faissIds) AND conversationId = :conversationId ORDER BY sequence ASC")
+    suspend fun getChunksByFaissIds(faissIds: List<Long>, conversationId: String): List<ChunkEntity>
 
     @Query("SELECT * FROM chunks WHERE messageId IN (SELECT id FROM messages WHERE conversationId = :conversationId) ORDER BY sequence ASC")
     suspend fun getChunksByConversation(conversationId: String): List<ChunkEntity>

@@ -214,7 +214,7 @@ class ChatViewModel @Inject constructor(
                 }
                 embeddingVectorBuffer += embeddingVector
 
-                val chunkSimilarity = chunkHandlerService.searchChunks( embeddingVector)
+                val chunkSimilarity = chunkHandlerService.searchChunks(embeddingVector, conversationId)
                 chunkEmbedBuffer += chunkSimilarity
             }
 
@@ -267,8 +267,8 @@ class ChatViewModel @Inject constructor(
 
             /**
              * Message update and retrieval
+             * Because inference response is asynchronous
              */
-            //Because inference response is asynchronous
             val responseAsistantMessage = _messages.value.find { it.id == assistantId }
             localDBService.insertMessage(MessageEntity(
                 id = assistantId,
@@ -285,6 +285,24 @@ class ChatViewModel @Inject constructor(
                 preview = responseAsistantMessage?.text.orEmpty().take(80),
                 updatedAt = currentTimeMilis,
             )
+
+            val assistantResponseText = responseAsistantMessage?.text.orEmpty()
+            if (assistantResponseText.isNotBlank()) {
+                val assistantChunks = chunkHandlerService.preprocessAndChunk(
+                    messageId = assistantId,
+                    conversationId = conversationId,
+                    role = ChatRole.Assistant.name,
+                    text = assistantResponseText
+                )
+                assistantChunks.forEach { chunk ->
+                    val embeddingVector = withContext(Dispatchers.IO) {
+                        embeddingEngine.embed(chunk.text)
+                    }
+                    chunkHandlerService.storeChunk(chunk, embeddingVector)
+                }
+                chunkHandlerService.saveFileChunk()
+            }
+
             Timber.d("sendMessage: saved assistant msg + updated conversation $conversationId")
 
             finishAssistantStream(assistantId)
@@ -306,7 +324,12 @@ class ChatViewModel @Inject constructor(
         message: String,
     ): Pair<List<ChunkEntity>, Bitmap?>{
 
-        val preprocessChunk = chunkHandlerService.preprocessAndChunk(messageId, message)
+        val preprocessChunk = chunkHandlerService.preprocessAndChunk(
+            messageId = messageId,
+            conversationId = conversationId,
+            role = ChatRole.User.name,
+            text = message
+        )
         if(transientImageUri==null) return Pair(preprocessChunk, null)
 
         val savedPath = imageManipulation.copyToInternal(

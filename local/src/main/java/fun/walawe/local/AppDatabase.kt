@@ -12,7 +12,7 @@ import `fun`.walawe.local.data.MessageEntity
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, ChunkEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +25,8 @@ abstract class AppDatabase : RoomDatabase() {
             CREATE TABLE IF NOT EXISTS `chunks` (
                 `id` TEXT NOT NULL PRIMARY KEY,
                 `messageId` TEXT NOT NULL,
+                `conversationId` TEXT NOT NULL,
+                `role` TEXT NOT NULL,
                 `text` TEXT NOT NULL,
                 `faissId` INTEGER NOT NULL,
                 `sequence` INTEGER NOT NULL,
@@ -36,6 +38,12 @@ abstract class AppDatabase : RoomDatabase() {
             db.execSQL(CREATE_CHUNKS_TABLE)
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_chunks_messageId` ON `chunks`(`messageId`)")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_chunks_faissId` ON `chunks`(`faissId`)")
+        }
+
+        val MIGRATION_2_4 = Migration(2, 3) { db ->
+            db.execSQL("ALTER TABLE `chunks` ADD COLUMN `role` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `chunks` ADD COLUMN `conversationId` TEXT NOT NULL DEFAULT ``")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_chunks_conversationId` ON `chunks`(`conversationId`)")
         }
     }
 }

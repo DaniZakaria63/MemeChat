@@ -25,9 +25,9 @@ class ChunkHandlerService @Inject constructor(
         VectorStore.release()
     }
 
-    suspend fun preprocessAndChunk(messageId: String, text: String): List<ChunkEntity> {
+    suspend fun preprocessAndChunk(messageId: String, conversationId: String, role: String, text: String): List<ChunkEntity> {
         val result = preprocess.preprocess(text)
-        return buildChunks(result.sentences, messageId, faissIdCounter)
+        return buildChunks(result.sentences, messageId, conversationId, role, faissIdCounter)
     }
 
     suspend fun storeChunk(chunk: ChunkEntity, vector: FloatArray) {
@@ -49,13 +49,14 @@ class ChunkHandlerService @Inject constructor(
      */
     suspend fun searchChunks(
         queryVector: FloatArray,
+        conversationId: String,
         topK: Int = 5,
         minScore: Float = 0.5f,
     ): List<ChunkEntity> {
         val matches = VectorStore.search(queryVector, topK)
         val relevant = matches.filter { it.score >= minScore }
         if (relevant.isEmpty()) return emptyList()
-        return chunkDao.getChunksByFaissIds(relevant.map { it.id })
+        return chunkDao.getChunksByFaissIds(relevant.map { it.id }, conversationId)
     }
 
     suspend fun deleteConversationChunks(conversationId: String) {
@@ -69,6 +70,8 @@ class ChunkHandlerService @Inject constructor(
 internal fun buildChunks(
     sentences: List<String>,
     messageId: String,
+    conversationId: String,
+    role: String,
     faissIdCounter: AtomicLong = AtomicLong(System.currentTimeMillis()),
     maxChars: Int = 1000,
 ): List<ChunkEntity> {
@@ -79,6 +82,8 @@ internal fun buildChunks(
             ChunkEntity(
                 id = UUID.randomUUID().toString(),
                 messageId = messageId,
+                conversationId = conversationId,
+                role = role,
                 text = text.trim(),
                 faissId = faissIdCounter.getAndIncrement(),
                 sequence = index,
