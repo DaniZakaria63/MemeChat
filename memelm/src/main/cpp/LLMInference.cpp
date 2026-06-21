@@ -96,41 +96,6 @@ static constexpr const char* TOK_ASSISTANT  = "assistant\n";
 static constexpr const char* TOK_THINK_START  = "<think>";
 static constexpr const char* TOK_THINK_END = "</think>";
 
-std::string LLMInference::buildImagePrompt(mtmd_context* mtmd_ctx,
-                               const string& systemPrompt,
-                               const string& userPrompt,
-                               bool forReasoning) {
-    const char* marker = mtmd_default_marker();
-
-    string p;
-    if (!systemPrompt.empty()) {
-        p += TOK_IM_START; p += TOK_SYSTEM;
-        p += systemPrompt;
-        p += TOK_IM_END;   p += "\n";
-    }
-    p += TOK_IM_START; p += TOK_USER; p += "\n";
-    p += marker;
-    p += "\n";
-    p += userPrompt;
-    p += TOK_IM_END;   p += "\n";
-    p += TOK_IM_START; p += TOK_ASSISTANT;
-    if (forReasoning) p += TOK_THINK_START;  p += "\n";
-    return p;
-}
-
-string LLMInference::buildImageTurnPrompt(const string& userPrompt, bool forReasoning) {
-    const char* marker = mtmd_default_marker();
-    string p;
-    p += TOK_IM_START; p += TOK_USER; p += "\n";
-    p += marker;
-    p += "\n";
-    p += userPrompt;
-    p += TOK_IM_END;   p += "\n";
-    p += TOK_IM_START; p += TOK_ASSISTANT;
-    if (forReasoning) p += TOK_THINK_START;  p += "\n";
-    return p;
-}
-
 // Context headroom guard
 bool LLMInference::hasContextHeadroom(int n_new_tokens) const {
     const int n_ctx  = llama_n_ctx(m_ctx);
@@ -161,9 +126,6 @@ static bool isCompleteUtf8(const std::string& s) {
     return true;
 }
 
-// Token generation loop
-// Reads from current m_n_past position and advances it as tokens are generated.
-// m_n_past is a member — it persists across calls, keeping KV cache in sync.
 string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb) {
     string response;
     char   piece_buf[256];
@@ -348,17 +310,12 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
 
 // Image + Text inference with KV cache persistence
 std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
-                                               bool resetFirst, bool forReasoning,
-                                               const TokenCallback* cb) {
+                                              bool forReasoning, const TokenCallback* cb) {
     if (!m_mtmd_ctx || !m_ctx) {
         LOGe("processImageAndText: engine not initialized");
         return "";
     }
-
-    if (resetFirst) {
-        resetContext();
-        LOGi("processImageAndText: context reset for new conversation");
-    }
+    resetContext();
 
     std::vector<uint8_t> rgb = bitmapToRGB(env, bitmap);
     if (rgb.empty()) return "";
@@ -376,13 +333,8 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
         return "";
     }
 
-    // C++ builds the prompt because only it can call mtmd_default_marker()
-    const string full_prompt = resetFirst
-        ? buildImagePrompt(m_mtmd_ctx, m_systemPrompt, prompt, forReasoning)
-        : buildImageTurnPrompt(prompt, forReasoning);
-
     mtmd_input_text input_text;
-    input_text.text          = full_prompt.c_str();
+    input_text.text          = prompt;
     input_text.add_special   = true;
     input_text.parse_special = true;
 
@@ -414,17 +366,12 @@ std::string LLMInference::processImageAndText(JNIEnv* env, jobject bitmap, const
     return generateTokens(512, cb);
 }
 
-std::string LLMInference::processConversation(const char* chatML, bool resetFirst, const TokenCallback* cb) {
+std::string LLMInference::processConversation(const char* chatML, const TokenCallback* cb) {
     if (!m_ctx) {
         LOGe("processConversation: engine not initialized");
         return "";
     }
-
-    if (resetFirst) {
-        resetContext();
-        LOGi("processConversation: context reset for new conversation");
-    }
-
+    resetContext();
     string full_prompt(chatML);
 
     mtmd_input_text input_text;
@@ -476,7 +423,6 @@ void LLMInference::resetContext() {
     LOGi("resetContext: KV cache cleared, n_past reset to 0");
 }
 
-// ── Accessors
 std::string LLMInference::getBackendInfo() {
     return m_gpuUsed ? "GPU (Vulkan) ON" : "CPU only";
 }

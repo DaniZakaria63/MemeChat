@@ -49,7 +49,7 @@ class ModelDownloadWorker @AssistedInject constructor(
                 uri = DEFAULT_EMBEDDING_DOWNLOADER_URI,
                 fileName = MODEL_FILENAME_EMBEDDING,
                 cacheModel = true,
-                keyCacheModel = CacheKey.EMBEDDING
+                keyCacheModel = CacheKey.Embedding
             )
         )
 

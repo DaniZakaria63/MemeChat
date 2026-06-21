@@ -26,7 +26,7 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeInit(
 JNIEXPORT void JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndText(
         JNIEnv *env, jobject, jobject bitmap,
-        jstring prompt, jboolean resetFirst, jboolean forReasoning, jobject tokenCallback) {
+        jstring prompt, jboolean forReasoning, jobject tokenCallback) {
 
     TokenCallback cb{};
     jclass cls      = env->GetObjectClass(tokenCallback);
@@ -43,14 +43,14 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessImageAndText(
     env->DeleteLocalRef(cls);
 
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
-    g_inference.processImageAndText(env, bitmap, promptStr, resetFirst, forReasoning, &cb);
+    g_inference.processImageAndText(env, bitmap, promptStr, forReasoning, &cb);
     env->ReleaseStringUTFChars(prompt, promptStr);
     if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
 }
 
 JNIEXPORT void JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
-        JNIEnv *env, jobject, jstring chatML, jboolean resetFirst, jobject tokenCallback) {
+        JNIEnv *env, jobject, jstring chatML, jobject tokenCallback) {
 
     TokenCallback cb{};
     jclass cls      = env->GetObjectClass(tokenCallback);
@@ -67,7 +67,7 @@ Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProcessConversation(
     env->DeleteLocalRef(cls);
 
     const char *promptStr = env->GetStringUTFChars(chatML, nullptr);
-    g_inference.processConversation(promptStr, resetFirst, &cb);
+    g_inference.processConversation(promptStr, &cb);
     env->ReleaseStringUTFChars(chatML, promptStr);
     if (onComplete) env->CallVoidMethod(tokenCallback, onComplete);
 }

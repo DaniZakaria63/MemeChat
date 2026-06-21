@@ -1,5 +1,8 @@
 package `fun`.walawe.memechat.data
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import `fun`.walawe.constant.DEFAULT_FILENAME_FAISS_PERSISTANCE
 import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
@@ -11,6 +14,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ModelRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val modelCache: ModelCache,
 ) {
     suspend fun getCachedModel(key: CacheKey): Result<String> = withContext(Dispatchers.IO) {
@@ -18,6 +22,18 @@ class ModelRepository @Inject constructor(
             IllegalStateException("Model not downloaded yet")
         )
         Result.success(resolveModelPath(cached))
+    }
+
+    suspend fun getVectorDBPath(): String = withContext(Dispatchers.IO) {
+        val file = File(context.filesDir, DEFAULT_FILENAME_FAISS_PERSISTANCE)
+        if(file.exists()) return@withContext file.absolutePath
+
+        context.assets.open("init.faiss").use { src ->
+            file.outputStream().use { dst ->
+                src.copyTo(dst)
+            }
+        }
+        file.absolutePath
     }
 
     fun clearCache(): Result<Unit> = modelCache.deleteAllCachedFiles()

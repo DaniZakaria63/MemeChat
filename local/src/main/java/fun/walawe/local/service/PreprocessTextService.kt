@@ -3,11 +3,8 @@ package `fun`.walawe.local.service
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.constant.MODEL_FILENAME_OPENNLP_SENTENCE
-import `fun`.walawe.constant.MODEL_FILENAME_OPENNLP_TOKEN
 import opennlp.tools.sentdetect.SentenceDetectorME
 import opennlp.tools.sentdetect.SentenceModel
-import opennlp.tools.tokenize.TokenizerME
-import opennlp.tools.tokenize.TokenizerModel
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -23,26 +20,19 @@ class PreprocessTextService @Inject constructor(
         SentenceDetectorME(loadAssetModel(MODEL_FILENAME_OPENNLP_SENTENCE) { SentenceModel(it) })
     }
 
-    private val tokenizer: TokenizerME by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        TokenizerME(loadAssetModel(MODEL_FILENAME_OPENNLP_TOKEN) { TokenizerModel(it) })
-    }
-
     data class PreprocessedResult(
         val original: String,
         val normalized: String,
         val sentences: List<String>,
-        val tokens: List<String>,
     )
 
     suspend fun preprocess(text: String): PreprocessedResult {
         val normalized = normalizeText(text)
         val sentences = detectSentences(normalized)
-        val tokens = tokenizeText(normalized)
         return PreprocessedResult(
             original = text,
             normalized = normalized,
             sentences = sentences.toList(),
-            tokens = tokens.toList(),
         )
     }
 
@@ -78,18 +68,6 @@ class PreprocessTextService @Inject constructor(
         } catch (e: Exception) {
             text.split(Regex("(?<=[.!?])\\s+(?=[A-Z\"'(\\[{])"))
                 .filter { it.isNotBlank() }
-                .toTypedArray()
-        }
-    }
-
-    private fun tokenizeText(text: String): Array<String> {
-        return try {
-            tokenizer.tokenize(text.lowercase())
-        } catch (e: Exception) {
-            text.lowercase()
-                .replace(Regex("[^a-zA-Z0-9\\s'-]"), " ")
-                .split(Regex("\\s+"))
-                .filter { it.length > 1 || it == "a" || it == "I" }
                 .toTypedArray()
         }
     }

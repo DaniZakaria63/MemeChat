@@ -46,6 +46,9 @@ android {
         resources {
             excludes += "/META-INF/DEPENDENCIES"
         }
+        jniLibs {
+            pickFirsts += listOf("**/libomp.so")
+        }
     }
 }
 
@@ -95,6 +98,7 @@ dependencies {
     implementation(libs.lottie.compose)
     implementation(libs.androidx.material3)
 
+    testImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.hilt.android.testing)
     androidTestImplementation(libs.androidx.test.runner)

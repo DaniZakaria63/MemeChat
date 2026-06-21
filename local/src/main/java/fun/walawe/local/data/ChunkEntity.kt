@@ -16,11 +16,14 @@ import androidx.room.PrimaryKey
     indices = [
         Index("messageId"),
         Index("faissId"),
+        Index("conversationId"),
     ],
 )
 data class ChunkEntity(
     @PrimaryKey val id: String,
     val messageId: String,
+    val conversationId: String,
+    val role: String,
     val text: String,
     val faissId: Long,
     val sequence: Int,

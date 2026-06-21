@@ -26,6 +26,8 @@ android {
 
 dependencies {
     implementation(project(":constant"))
+    implementation(project(":vector"))
+
     implementation(libs.opennlp.runtime)
     implementation (libs.androidx.room.runtime)
     implementation (libs.androidx.room.ktx)
@@ -36,5 +38,7 @@ dependencies {
     implementation(libs.timber)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.jetbrains.coroutine.test)
     androidTestImplementation(libs.androidx.junit)
 }

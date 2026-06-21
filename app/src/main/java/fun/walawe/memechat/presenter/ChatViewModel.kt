@@ -1,18 +1,17 @@
 package `fun`.walawe.memechat.presenter
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import `fun`.walawe.constant.DEFAULT_MODEL_SYSTEM_PROMPT
-import `fun`.walawe.local.dao.ConversationDao
+import `fun`.walawe.local.data.ChunkEntity
 import `fun`.walawe.local.data.ConversationEntity
-import `fun`.walawe.local.dao.MessageDao
 import `fun`.walawe.local.data.MessageEntity
-import `fun`.walawe.local.service.MemoryService
-import `fun`.walawe.memechat.data.ChatMLBuilder
-import `fun`.walawe.memechat.data.ImageDecoder
-import `fun`.walawe.memechat.data.ImageStore
+import `fun`.walawe.local.service.ChunkHandlerService
+import `fun`.walawe.local.service.LocalDatabaseService
+import `fun`.walawe.memechat.data.ChatEmbedBuilder
 import `fun`.walawe.memechat.data.ModelRepository
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
@@ -40,17 +39,20 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import timber.log.Timber
+import `fun`.walawe.memechat.data.ImageManipulation
+import `fun`.walawe.memechat.model.getChatRole
+import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
+import kotlin.collections.indexOfFirst
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
-    private val imageDecoder: ImageDecoder,
     private val inferenceEngine: InferenceEngine,
-    private val memoryService: MemoryService,
-    private val messageDao: MessageDao,
-    private val conversationDao: ConversationDao,
-    private val imageStore: ImageStore,
+    private val imageManipulation: ImageManipulation,
+    private val localDBService: LocalDatabaseService,
+    private val embeddingEngine: EmbeddingEngine,
+    private val chunkHandlerService: ChunkHandlerService,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized).also { flow ->
@@ -67,8 +69,11 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
+    private val _currentConversationId = MutableStateFlow<String?>(null)
+    val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
+
     val conversations: StateFlow<List<ConversationHistory>> =
-        conversationDao.getAllConversations().map { entities ->
+        localDBService.getAllConversations().map { entities ->
             entities.map { entity ->
                 ConversationHistory(
                     id = entity.id,
@@ -79,17 +84,12 @@ class ChatViewModel @Inject constructor(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _currentConversationId = MutableStateFlow<String?>(null)
-    val currentConversationId: StateFlow<String?> = _currentConversationId.asStateFlow()
-    private var currentConversationCreatedAt: Long = 0L
-    private var isKvCachePopulated = false
-
     init {
         safeViewModelScope.launch {
             prepareModel()
             runCatching {
-                val validIds = conversationDao.getAllConversationIds().toSet()
-                imageStore.sweepOrphans(validIds)
+                val validIds = localDBService.getAllConversationIds().toSet()
+                imageManipulation.sweepOrphans(validIds)
             }
         }
     }
@@ -97,38 +97,32 @@ class ChatViewModel @Inject constructor(
     fun startNewConversation() {
         safeViewModelScope.launch {
             _messages.value = emptyList()
+            _currentConversationId.value = null
             _uiState.update { it.copy(isNewConversation = true, selectedImageUri = null) }
             inferenceEngine.cancelGeneration()
-            _currentConversationId.value = null
-            isKvCachePopulated = false
         }
     }
 
     fun loadConversation(conversationId: String) {
         Timber.d("loadConversation: start id=$conversationId")
         safeViewModelScope.launch {
-            _currentConversationId.value = conversationId
-            val conv = conversationDao.getConversation(conversationId)
+            val conv = localDBService.getConversation(conversationId)
             if (conv == null) {
                 Timber.w("loadConversation: conversation not found $conversationId")
                 return@launch
             }
-            currentConversationCreatedAt = conv.createdAt
-            isKvCachePopulated = false
+
+            _currentConversationId.value = conversationId
             _uiState.update { it.copy(isNewConversation = false) }
-            val entities = messageDao.getMessages(conversationId)
-            Timber.d("loadConversation: got ${entities.size} entities from Room for $conversationId")
-            val loaded = entities.reversed().map { entity ->
+
+            val messages = localDBService.getMessages(conversationId)
+            val loaded = messages.reversed().map { entity ->
                 val safeImage = entity.imageUri?.takeIf { File(it).exists() }
                 ChatMessage(
                     id = entity.id,
-                    role = when (entity.role) {
-                        "User" -> ChatRole.User
-                        "Assistant" -> ChatRole.Assistant
-                        else -> ChatRole.System
-                    },
+                    role = entity.role.getChatRole(),
                     text = entity.text,
-                    timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(entity.timestamp)),
+                    timestamp = currentTime(entity.timestamp),
                     imageUri = safeImage,
                     reasoning = entity.reasoning,
                 )
@@ -140,8 +134,9 @@ class ChatViewModel @Inject constructor(
 
     fun deleteConversation(conversationId: String) {
         safeViewModelScope.launch {
-            conversationDao.delete(conversationId)
-            imageStore.deleteConversationFolder(conversationId)
+            localDBService.deleteConversation(conversationId)
+            imageManipulation.deleteConversationFolder(conversationId)
+            chunkHandlerService.deleteConversationChunks(conversationId)
             if (_currentConversationId.value == conversationId) {
                 startNewConversation()
             }
@@ -158,106 +153,199 @@ class ChatViewModel @Inject constructor(
         val transientImageUri = _uiState.value.selectedImageUri
         val forReasoning = _uiState.value.isThinkingEnabled
         val isNewConversation = _currentConversationId.value == null
-        val conversationId = _currentConversationId.value ?: createNewConversation()
+        val conversationId = _currentConversationId.value ?: UUID.randomUUID().toString()
+        val currentTimeMilis = System.currentTimeMillis()
 
         safeViewModelScope.launch {
-            val augmentedInput = memoryService.augmentQuery(message)
             val userMsgId = UUID.randomUUID().toString()
             val assistantId = UUID.randomUUID().toString()
+            val userMessage = ChatMessage(
+                id = userMsgId,
+                role = ChatRole.User,
+                text = message,
+                timestamp = currentTime(currentTimeMilis),
+                imageUri = transientImageUri
+            )
+            val assistantMessage = ChatMessage(
+                id = assistantId,
+                role = ChatRole.Assistant,
+                text = "",
+                timestamp = "",
+                isStreaming = true
+            )
 
-            val persistedImagePath: String? = transientImageUri?.let { uriString ->
-                imageStore.copyToInternal(
-                    src = uriString.toUri(),
-                    conversationId = conversationId,
-                    messageId = userMsgId,
-                )
-            }
-            if (transientImageUri != null && persistedImagePath == null) {
-                postError("Failed to attach image")
-                return@launch
-            }
+            /**
+             * Preprocess Image
+             * This will return clean chunk
+             */
+            val (chunkList, imageBitmap) = preprocessTextAndImage(
+                transientImageUri = transientImageUri,
+                conversationId = conversationId,
+                messageId = userMsgId,
+                message = message
+            )
+
+            val chunkTextOnlyList = chunkList
+                .sortedBy { it.sequence }
+                .map { it.text }
 
             if (isNewConversation) {
-                conversationDao.insert(ConversationEntity(
-                    id = conversationId, title = message.take(50),
-                    preview = message.take(80),
-                    updatedAt = System.currentTimeMillis(),
-                    createdAt = currentConversationCreatedAt,
+                localDBService.insertConversation(ConversationEntity(
+                    id = conversationId,
+                    title = chunkTextOnlyList.first().take(50),
+                    preview = chunkTextOnlyList.first().take(80),
+                    updatedAt = currentTimeMilis,
+                    createdAt = currentTimeMilis,
                 ))
             }
-
-            messageDao.insert(MessageEntity(
-                id = userMsgId, conversationId = conversationId,
-                role = "User", text = message, reasoning = "",
-                timestamp = System.currentTimeMillis(), imageUri = persistedImagePath,
-            ))
-
-            val userMessage = ChatMessage(id = userMsgId, role = ChatRole.User,
-                text = message, timestamp = currentTime(), imageUri = persistedImagePath)
-            val assistantMessage = ChatMessage(id = assistantId, role = ChatRole.Assistant,
-                text = "", timestamp = "", isStreaming = true)
-
-            val existingHistory = _messages.value.toList()
             _messages.update { listOf(assistantMessage, userMessage) + it }
             _uiState.update { it.copy(isNewConversation = false) }
 
-            var responseText = ""
-            val imageBitmap = persistedImagePath?.let { path ->
-                withContext(Dispatchers.IO) { imageDecoder.decode(Uri.fromFile(File(path))) }
+            /**
+             * Embedding Vector Search
+             * Process embedding using embedding model
+             * Search vector in local vector db
+             */
+            val chunkEmbedBuffer = mutableListOf<ChunkEntity>()
+            val embeddingVectorBuffer = mutableListOf<FloatArray>()
+            chunkList.forEach {
+                val embeddingVector = withContext(Dispatchers.IO){
+                    embeddingEngine.embed(it.text)
+                }
+                embeddingVectorBuffer += embeddingVector
+
+                val chunkSimilarity = chunkHandlerService.searchChunks(embeddingVector, conversationId)
+                chunkEmbedBuffer += chunkSimilarity
             }
 
-            val resetFirst = !isKvCachePopulated
-            val chatML = when {
-                imageBitmap == null && resetFirst -> ChatMLBuilder.buildFullFromHistory(
-                    DEFAULT_MODEL_SYSTEM_PROMPT,
-                    existingHistory.reversed() + userMessage,
-                    forReasoning)
-                imageBitmap == null -> ChatMLBuilder.buildTurn(augmentedInput, forReasoning)
-                else -> ""
-            }
+            val constructiveContextMessages = chunkEmbedBuffer
+                .distinctBy { it.id }
+                .sortedBy { it.sequence }
+                .map { it.text }
 
-            val outputFlow = if (imageBitmap != null) {
-                inferenceEngine.sendConversationWithImage(imageBitmap, augmentedInput, resetFirst, forReasoning)
+            val constructedPrompt = ChatEmbedBuilder.buildWithContext(
+                systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
+                contextHistory = constructiveContextMessages,
+                currentMessage = message,
+                forReasoning = forReasoning,
+                includeMediaMarker = imageBitmap != null,
+            )
+
+            /**
+             * LLM Process Prompt
+             */
+            val inferenceOutputFlow = if (imageBitmap == null) {
+                inferenceEngine.sendConversation(constructedPrompt, forReasoning)
             } else {
-                inferenceEngine.sendConversation(chatML, resetFirst, forReasoning)
+                inferenceEngine.sendConversationWithImage(imageBitmap, constructedPrompt, forReasoning)
             }
-            outputFlow.collect { (state, token) ->
+
+            inferenceOutputFlow.collect { (state, token) ->
                 when (state) {
                     STATE.THINKING -> appendReasoningToAssistant(assistantId, token)
-                    STATE.ANSWER -> { appendToAssistant(assistantId, token); responseText += token }
+                    STATE.ANSWER -> appendToAssistant(assistantId, token)
                 }
             }
-            isKvCachePopulated = true
 
-            messageDao.insert(MessageEntity(
-                id = assistantId, conversationId = conversationId,
-                role = "Assistant", text = responseText,
-                reasoning = _messages.value.find { it.id == assistantId }?.reasoning ?: "",
-                timestamp = System.currentTimeMillis(),
+            /**
+             * Room and Vector Persistence
+             */
+            localDBService.insertMessage(MessageEntity(
+                id = userMsgId,
+                conversationId = conversationId,
+                role = ChatRole.User.name,
+                text = message,
+                reasoning = "",
+                timestamp = currentTimeMilis,
+                imageUri = transientImageUri,
             ))
 
-            conversationDao.update(
-                id = conversationId, title = message.take(50),
-                preview = responseText.take(80),
-                updatedAt = System.currentTimeMillis(),
+            chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
+                chunkHandlerService.storeChunk(chunk, vector)
+            }
+            chunkHandlerService.saveFileChunk()
+
+            /**
+             * Message update and retrieval
+             * Because inference response is asynchronous
+             */
+            val responseAsistantMessage = _messages.value.find { it.id == assistantId }
+            localDBService.insertMessage(MessageEntity(
+                id = assistantId,
+                conversationId = conversationId,
+                role = ChatRole.Assistant.name,
+                text = responseAsistantMessage?.text.orEmpty().ifEmpty { "..." },
+                reasoning = responseAsistantMessage?.reasoning.orEmpty(),
+                timestamp = currentTimeMilis,
+            ))
+
+            localDBService.updateConversation(
+                id = conversationId,
+                title = message.take(50),
+                preview = responseAsistantMessage?.text.orEmpty().take(80),
+                updatedAt = currentTimeMilis,
             )
+
+            val assistantResponseText = responseAsistantMessage?.text.orEmpty()
+            if (assistantResponseText.isNotBlank()) {
+                val assistantChunks = chunkHandlerService.preprocessAndChunk(
+                    messageId = assistantId,
+                    conversationId = conversationId,
+                    role = ChatRole.Assistant.name,
+                    text = assistantResponseText
+                )
+                assistantChunks.forEach { chunk ->
+                    val embeddingVector = withContext(Dispatchers.IO) {
+                        embeddingEngine.embed(chunk.text)
+                    }
+                    chunkHandlerService.storeChunk(chunk, embeddingVector)
+                }
+                chunkHandlerService.saveFileChunk()
+            }
+
             Timber.d("sendMessage: saved assistant msg + updated conversation $conversationId")
 
             finishAssistantStream(assistantId)
         }
     }
 
-    private fun createNewConversation(): String {
-        val id = UUID.randomUUID().toString()
-        currentConversationCreatedAt = System.currentTimeMillis()
-        _currentConversationId.value = id
-        return id
-    }
-
     override fun onCleared() {
         inferenceEngine.cancelGeneration()
         inferenceEngine.destroy()
+        embeddingEngine.release()
+        chunkHandlerService.releaseVectorStore()
         super.onCleared()
+    }
+
+    private suspend fun preprocessTextAndImage(
+        transientImageUri: String?,
+        conversationId: String,
+        messageId: String,
+        message: String,
+    ): Pair<List<ChunkEntity>, Bitmap?>{
+
+        val preprocessChunk = chunkHandlerService.preprocessAndChunk(
+            messageId = messageId,
+            conversationId = conversationId,
+            role = ChatRole.User.name,
+            text = message
+        )
+        if(transientImageUri==null) return Pair(preprocessChunk, null)
+
+        val savedPath = imageManipulation.copyToInternal(
+            src = transientImageUri.toUri(),
+            conversationId = conversationId,
+            messageId = messageId,
+        )
+
+        val bitmap = if (savedPath.isNullOrBlank()) { null }
+        else {
+            withContext(Dispatchers.IO) {
+                imageManipulation.decode(Uri.fromFile(File(savedPath)))
+            }
+        }
+
+        return Pair(preprocessChunk, bitmap)
     }
 
     private suspend fun prepareModel() {
@@ -271,19 +359,27 @@ class ChatViewModel @Inject constructor(
             return
         }
 
+        val embeddingAbsolutePath = modelRepository.getCachedModel(CacheKey.Embedding).getOrElse { error ->
+            postError(error.message ?: "Embedding model is not downloaded yet")
+            return
+        }
+
+        val vectorDBAbsolutePath = modelRepository.getVectorDBPath()
+
         _uiState.update { it.copy(isNewConversation = true) }
-        loadModel(modelAbsolutePath, mmprojAbsolutePath)
+        loadModel(modelAbsolutePath, mmprojAbsolutePath, embeddingAbsolutePath, vectorDBAbsolutePath)
     }
 
-    private fun loadModel(model: String, mmproj: String) {
-        safeViewModelScope.launch {
+    private fun loadModel(model: String, mmproj: String, embedding: String, vectorDB: String) {
+        safeViewModelScope.launch(Dispatchers.IO) {
             inferenceEngine.loadModel(
                 pathToModel = model,
                 pathToMMProj = mmproj,
                 params = InferenceParams.getDefault()
-            ).also {
-                inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
-            }
+            )
+            inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
+            embeddingEngine.init(embedding)
+            chunkHandlerService.initVectorStore(vectorDB)
         }
     }
 
@@ -301,7 +397,9 @@ class ChatViewModel @Inject constructor(
         updateAssistantMessage(id) { it.copy(reasoning = it.reasoning + token) }
 
     fun finishAssistantStream(id: String) =
-        updateAssistantMessage(id) { it.copy(isStreaming = false, timestamp = currentTime()) }
+        updateAssistantMessage(id) {
+            it.copy(isStreaming = false, timestamp = currentTime(System.currentTimeMillis()))
+        }
 
     fun setSelectedImageUri(uri: String?) {
         _uiState.update { it.copy(selectedImageUri = uri) }
@@ -316,8 +414,8 @@ class ChatViewModel @Inject constructor(
         errorState.update { message }
     }
 
-    private fun currentTime(): String {
+    private fun currentTime(timeMilis: Long): String {
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
-        return formatter.format(System.currentTimeMillis())
+        return formatter.format(timeMilis)
     }
 }

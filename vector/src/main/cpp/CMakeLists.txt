@@ -23,7 +23,15 @@ set(FAISS_ENABLE_METAL   OFF CACHE BOOL "" FORCE)
 set(FAISS_ENABLE_CUVS    OFF CACHE BOOL "" FORCE)
 set(FAISS_OPT_LEVEL      "generic" CACHE STRING "" FORCE)
 
-add_subdirectory(${FAISS_DIR})
+# Import prebuilt OpenBLAS for ARM64
+add_library(openblas SHARED IMPORTED)
+set_target_properties(openblas PROPERTIES
+    IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/arm64-v8a/libopenblas.so
+)
+set(BLAS_LIBRARIES   openblas CACHE STRING "" FORCE)
+set(LAPACK_LIBRARIES openblas CACHE STRING "" FORCE)
+
+add_subdirectory(${FAISS_DIR} ${CMAKE_BINARY_DIR}/faiss)
 
 add_library(${CMAKE_PROJECT_NAME} SHARED vector.cpp)
 
