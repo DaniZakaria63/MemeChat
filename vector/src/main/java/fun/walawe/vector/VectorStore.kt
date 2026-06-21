@@ -1,10 +1,8 @@
 package `fun`.walawe.vector
 
-import java.io.FileNotFoundException
-
 object VectorStore {
     data class SearchResult(val id: Long, val score: Float)
-    var localFilePath: String? = null
+    private var localFilePath: String? = null
 
     fun init(checkpointPath: String? = null): Boolean {
         localFilePath = checkpointPath

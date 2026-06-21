@@ -5,12 +5,14 @@ class ChatEmbedBuilder {
         private const val IM_START = "<|im_start|>"
         private const val IM_END = "<|im_end|>"
         private const val THINK = "<think>\n"
+        private const val MEDIA_MARKER = "<__media__>\n"
 
         fun buildWithContext(
             systemPrompt: String,
             contextHistory: List<String>,
             currentMessage: String,
             forReasoning: Boolean = false,
+            includeMediaMarker: Boolean = false,
         ): String {
             val sb = StringBuilder()
 
@@ -24,6 +26,7 @@ class ChatEmbedBuilder {
             }
             sb.append("$IM_END\n")
             sb.append("${IM_START}user\n")
+            if (includeMediaMarker) sb.append(MEDIA_MARKER)
             sb.append(currentMessage)
             sb.append("$IM_END\n")
             sb.append("${IM_START}assistant\n")

@@ -73,7 +73,6 @@ class InferenceEngineImpl private constructor(
     external fun nativeProcessImageAndText(
         bitmap: Bitmap,
         prompt: String,
-        resetFirst: Boolean,
         forReasoning: Boolean,
         tokenCallback: StreamCallback,
     )
@@ -82,7 +81,6 @@ class InferenceEngineImpl private constructor(
     @FastNative
     external fun nativeProcessConversation(
         chatML: String,
-        resetFirst: Boolean,
         tokenCallback: StreamCallback,
     )
 
@@ -91,9 +89,6 @@ class InferenceEngineImpl private constructor(
 
     @FastNative
     external fun nativeRelease()
-
-    @FastNative
-    external fun nativeResetContext()
 
     @FastNative
     external fun nativeCancelGeneration()
@@ -232,13 +227,18 @@ class InferenceEngineImpl private constructor(
                 }
                 override fun onComplete() { close() }
             }
-            nativeProcessConversation(prompt, true, callback) //TODO: Validate this later
+            nativeProcessConversation(prompt, callback)
         } catch (e: CancellationException) {
-            _state.value = InferenceEngine.State.ModelReady; close(); throw e
+            _state.value = InferenceEngine.State.ModelReady
+            close()
+            throw e
         } catch (e: Exception) {
-            _state.value = InferenceEngine.State.Error(e); close(e)
+            _state.value = InferenceEngine.State.Error(e)
+            close(e)
         } finally {
-            _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+            _state.value = InferenceEngine.State.ModelReady
+            close()
+            awaitClose()
         }
     }.flowOn(llamaDispatcher)
 
@@ -273,13 +273,18 @@ class InferenceEngineImpl private constructor(
                 }
                 override fun onComplete() { close() }
             }
-            nativeProcessImageAndText(scaledBitmap, message, true, forReasoning, callback) // TODO: Validate this later
+            nativeProcessImageAndText(scaledBitmap, message, forReasoning, callback)
         } catch (e: CancellationException) {
-            _state.value = InferenceEngine.State.ModelReady; close(); throw e
+            _state.value = InferenceEngine.State.ModelReady
+            close()
+            throw e
         } catch (e: Exception) {
-            _state.value = InferenceEngine.State.Error(e); close(e)
+            _state.value = InferenceEngine.State.Error(e)
+            close(e)
         } finally {
-            _state.value = InferenceEngine.State.ModelReady; close(); awaitClose()
+            _state.value = InferenceEngine.State.ModelReady
+            close()
+            awaitClose()
         }
     }.flowOn(llamaDispatcher)
 

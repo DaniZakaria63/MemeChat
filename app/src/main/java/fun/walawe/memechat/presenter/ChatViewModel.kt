@@ -136,6 +136,7 @@ class ChatViewModel @Inject constructor(
         safeViewModelScope.launch {
             localDBService.deleteConversation(conversationId)
             imageManipulation.deleteConversationFolder(conversationId)
+            chunkHandlerService.deleteConversationChunks(conversationId)
             if (_currentConversationId.value == conversationId) {
                 startNewConversation()
             }
@@ -227,6 +228,7 @@ class ChatViewModel @Inject constructor(
                 contextHistory = constructiveContextMessages,
                 currentMessage = message,
                 forReasoning = forReasoning,
+                includeMediaMarker = imageBitmap != null,
             )
 
             /**
@@ -272,7 +274,7 @@ class ChatViewModel @Inject constructor(
                 id = assistantId,
                 conversationId = conversationId,
                 role = ChatRole.Assistant.name,
-                text = "",
+                text = responseAsistantMessage?.text.orEmpty().ifEmpty { "..." },
                 reasoning = responseAsistantMessage?.reasoning.orEmpty(),
                 timestamp = currentTimeMilis,
             ))
@@ -304,19 +306,21 @@ class ChatViewModel @Inject constructor(
         message: String,
     ): Pair<List<ChunkEntity>, Bitmap?>{
 
-        val bitmap = transientImageUri?.let {
-            imageManipulation.copyToInternal(
-                src = it.toUri(),
-                conversationId = conversationId,
-                messageId = messageId,
-            )
+        val preprocessChunk = chunkHandlerService.preprocessAndChunk(messageId, message)
+        if(transientImageUri==null) return Pair(preprocessChunk, null)
 
+        val savedPath = imageManipulation.copyToInternal(
+            src = transientImageUri.toUri(),
+            conversationId = conversationId,
+            messageId = messageId,
+        )
+
+        val bitmap = if (savedPath.isNullOrBlank()) { null }
+        else {
             withContext(Dispatchers.IO) {
-                imageManipulation.decode(Uri.fromFile(File(it)))
+                imageManipulation.decode(Uri.fromFile(File(savedPath)))
             }
         }
-
-        val preprocessChunk = chunkHandlerService.preprocessAndChunk(messageId, message)
 
         return Pair(preprocessChunk, bitmap)
     }
