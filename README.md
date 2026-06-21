@@ -9,7 +9,7 @@
 The modules are intentionally separated by responsibility. `constant` feeds into both `memelm` and `modelpull`. The `app` module sits at the top of the dependency graph and assembles everything. The app also runs a full on-device RAG pipeline. This way every message is preprocessed into chunks, converted into vectors, and stored in a local vector store for later retrieval. When you ask a question, relevant past context is pulled from the vector store and injected into the prompt, all without ever leaving your device.
 
 <p align="center">
-    <img src="./docs/architecture.jpg" alt="Architecture Diagram" width="500"/>
+    <img src="./docs/architecture.jpg" alt="Architecture Diagram"/>
 </p>
 
 ---
@@ -18,7 +18,9 @@ The modules are intentionally separated by responsibility. `constant` feeds into
 
 Per-Friday/5/June/2026.
 
-<video src="./docs/latest-preview.mp4" controls width="100%"></video>
+
+https://github.com/user-attachments/assets/404851f5-e82d-4002-80ca-7197976c7f01
+
 
 ---
 
@@ -41,7 +43,7 @@ Two engines in one module: the main inference runtime for MiniCPM and a separate
 | Layer | Technology |
 |---|---|
 | Inference runtime | llama.cpp (C++) |
-| Embedding runtime | llama.cpp (separate GGUF model, `LLAMA_POOLING_TYPE_MEAN`) |
+| Embedding runtime | llama.cpp (EmbeddingGemma 300m) |
 | Android integration | JNI (`System.loadLibrary`) |
 | Native build | CMake / Android NDK |
 | API surface | Kotlin (suspend functions / Flow, `EmbeddingEngine.embed()`) |
