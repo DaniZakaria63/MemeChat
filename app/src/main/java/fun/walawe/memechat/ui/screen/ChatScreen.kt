@@ -35,7 +35,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,16 +50,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
@@ -96,6 +101,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -103,8 +109,10 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,6 +136,7 @@ import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
 import `fun`.walawe.memechat.model.ConversationHistory
+import `fun`.walawe.memechat.model.WebSearchMode
 import `fun`.walawe.memechat.presenter.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -143,8 +152,9 @@ fun ChatScreen(
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val currentConversationId by viewModel.currentConversationId.collectAsStateWithLifecycle()
 
-    var inputText by remember { mutableStateOf("") }
+    var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val galleryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {
@@ -183,15 +193,24 @@ fun ChatScreen(
         },
         onRemoveImage = { viewModel.setSelectedImageUri(null) },
         onSend = {
-            if (inputText.isNotBlank() && !uiState.isProcessing) {
-                viewModel.sendMessage(inputText)
-                inputText = ""
+            if (inputText.text.isNotBlank() && !uiState.isProcessing) {
+                keyboardController?.hide()
+                viewModel.sendMessage(inputText.text)
+                inputText = TextFieldValue("")
                 viewModel.setSelectedImageUri(null)
             }
         },
         onDismissError = viewModel::clearError,
         isThinkingEnabled = uiState.isThinkingEnabled,
         onToggleThinking = { viewModel.toggleThinking() },
+        webSearchMode = uiState.webSearchMode,
+        onToggleWebSearchMode = { viewModel.setWebSearchMode(
+            when (uiState.webSearchMode) {
+                WebSearchMode.None -> WebSearchMode.Search
+                WebSearchMode.Search -> WebSearchMode.Fetch
+                WebSearchMode.Fetch -> WebSearchMode.None
+            }
+        ) },
     )
 }
 
@@ -201,8 +220,8 @@ fun ChatScreen(
 private fun ChatScreenContent(
     uiState: ChatUiState,
     messages: List<ChatMessage>,
-    inputText: String,
-    onInputChange: (String) -> Unit,
+    inputText: TextFieldValue,
+    onInputChange: (TextFieldValue) -> Unit,
     drawerState: DrawerState,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -217,6 +236,8 @@ private fun ChatScreenContent(
     onDismissError: () -> Unit,
     isThinkingEnabled: Boolean,
     onToggleThinking: () -> Unit,
+    webSearchMode: WebSearchMode = WebSearchMode.None,
+    onToggleWebSearchMode: () -> Unit = {},
 ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -236,91 +257,99 @@ private fun ChatScreenContent(
                     onOpenSettings = onOpenSettings
                 )
             }
-        }
+        },
+        modifier = Modifier.fillMaxSize().imePadding(),
     ) {
-        Scaffold(
-            contentWindowInsets = WindowInsets.statusBars
-                .add(WindowInsets.navigationBars)
-                .add(WindowInsets.displayCutout),
-            topBar = {
-                CenterAlignedTopAppBar(
-                    modifier = Modifier.fillMaxWidth().shadow(4.dp),
-                    windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
-                    title = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if(uiState.isNewConversation) "New Conversation" else "MemeLM Chat",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "MiniCPM-V4.6",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onOpenDrawer) {
-                            Icon(painterResource(R.drawable.ic_menu),
-                                contentDescription = "Open drawer",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onNewChat) {
-                            Icon(painterResource(R.drawable.ic_new_chat),
-                                contentDescription = "New Chat",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceBright,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
+        Box(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
+            Scaffold(
+                contentWindowInsets = WindowInsets.statusBars
+                    .add(WindowInsets.displayCutout),
+                topBar = {
+                    CenterAlignedTopAppBar(
+                        modifier = Modifier.fillMaxWidth().shadow(4.dp),
+                        windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
+                        title = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = if(uiState.isNewConversation) "New Conversation" else "MemeLM Chat",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "MiniCPM-V4.6",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onOpenDrawer) {
+                                Icon(painterResource(R.drawable.ic_menu),
+                                    contentDescription = "Open drawer",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = onNewChat) {
+                                Icon(painterResource(R.drawable.ic_new_chat),
+                                    contentDescription = "New Chat",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceBright,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     )
-                )
-            },
-            bottomBar = {
-                InputBar(
-                    inputText = inputText,
-                    selectedImageUri = uiState.selectedImageUri,
-                    onInputChange = onInputChange,
-                    onAttach = onAttach,
-                    onRemoveImage = onRemoveImage,
-                    onSend = onSend,
-                    isThinkingEnabled = isThinkingEnabled,
-                    onToggleThinking = onToggleThinking,
-                )
-            }
-        ) { padding ->
-            Box(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-                MessageList(messages = messages)
-
-                val showIntroVideo = messages.isEmpty() &&
-                        uiState.isNewConversation
-
-                if (showIntroVideo) {
-                    LoopingWebmSnippet(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                },
+                bottomBar = {}
+            ) { padding ->
+                Box(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    MessageList(
+                        messages = messages,
+                        modifier = Modifier.padding(bottom = 120.dp),
                     )
-                }
 
-                if (!uiState.error.isNullOrEmpty()) {
-                    TransientErrorDialog(
-                        message = uiState.error,
-                        onDismiss = onDismissError,
-                    )
+                    val showIntroVideo = messages.isEmpty() &&
+                            uiState.isNewConversation
+
+                    if (showIntroVideo) {
+                        LoopingWebmSnippet(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+
+                    if (!uiState.error.isNullOrEmpty()) {
+                        TransientErrorDialog(
+                            message = uiState.error,
+                            onDismiss = onDismissError,
+                        )
+                    }
                 }
             }
+
+            InputBar(
+                inputText = inputText,
+                selectedImageUri = uiState.selectedImageUri,
+                onInputChange = onInputChange,
+                onAttach = onAttach,
+                onRemoveImage = onRemoveImage,
+                onSend = onSend,
+                isThinkingEnabled = isThinkingEnabled,
+                onToggleThinking = onToggleThinking,
+                webSearchMode = webSearchMode,
+                onToggleWebSearchMode = onToggleWebSearchMode,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
@@ -458,10 +487,10 @@ private fun ConversationRow(
 }
 
 @Composable
-private fun MessageList(messages: List<ChatMessage>) {
+private fun MessageList(messages: List<ChatMessage>, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
     LazyColumn(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         reverseLayout = true,
@@ -574,17 +603,22 @@ private fun MessageBubble(
 
 @Composable
 private fun InputBar(
-    inputText: String,
+    inputText: TextFieldValue,
     selectedImageUri: String?,
-    onInputChange: (String) -> Unit,
+    onInputChange: (TextFieldValue) -> Unit,
     onAttach: () -> Unit,
     onRemoveImage: () -> Unit,
     onSend: () -> Unit,
     isThinkingEnabled: Boolean,
     onToggleThinking: () -> Unit,
+    webSearchMode: WebSearchMode = WebSearchMode.None,
+    onToggleWebSearchMode: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
+    var showAttachMenu by remember { mutableStateOf(false) }
+
     Card(
-        modifier = Modifier.padding(top = 8.dp, bottom = 24.dp, start = 16.dp, end = 16.dp) ,
+        modifier = modifier.padding(top = 8.dp, bottom = 8.dp, start = 12.dp, end = 12.dp) ,
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceBright),
         elevation = CardDefaults.cardElevation(12.dp)
@@ -639,7 +673,7 @@ private fun InputBar(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { onSend() }),
                 decorationBox = { innerTextField ->
-                    if (inputText.isEmpty()) {
+                    if (inputText.text.isEmpty()) {
                         Text(
                             text = "Explain this meme",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -650,7 +684,6 @@ private fun InputBar(
                 }
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -660,31 +693,79 @@ private fun InputBar(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Box {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            onClick = { showAttachMenu = true },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = "Attach",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showAttachMenu,
+                            onDismissRequest = { showAttachMenu = false },
+                            shape = RoundedCornerShape(12.dp),
+                            offset = DpOffset(0.dp, (-4).dp),
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Image") },
+                                onClick = {
+                                    showAttachMenu = false
+                                    onAttach()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Image, contentDescription = null)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        when (webSearchMode) {
+                                            WebSearchMode.Search -> "Search Web"
+                                            WebSearchMode.Fetch -> "Fetch URL"
+                                            WebSearchMode.None -> "Web Search"
+                                        }
+                                    )
+                                },
+                                onClick = {
+                                    onToggleWebSearchMode()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Search, contentDescription = null)
+                                }
+                            )
+                        }
+                    }
+
                     ModelButton(
                         onClick = onToggleThinking,
                         icon = Icons.Filled.AutoAwesome,
                         text = "Thinking",
                         isHighlight = isThinkingEnabled
                     )
-
-                    ModelButton(
-                        onClick = onAttach,
-                        icon = Icons.Filled.Image,
-                        text = "Image",
-                        isHighlight = false
-                    )
                 }
 
                 FloatingActionButton(
                     onClick = onSend,
-                    containerColor = if (inputText.isNotEmpty()) {
+                    containerColor = if (inputText.text.isNotEmpty()) {
                         MaterialTheme.colorScheme.primaryFixed
                     } else MaterialTheme.colorScheme.secondaryFixedDim,
-                    modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(36.dp),
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ArrowUpward,
+                        imageVector = Icons.Default.Send,
                         contentDescription = "Send",
                         modifier = Modifier.size(20.dp)
                     )
@@ -741,13 +822,12 @@ fun ModelButton(
     Surface(
         onClick = onClick,
         color = if (isHighlight) {
-            MaterialTheme.colorScheme.surfaceVariant
-        } else Color.Transparent,
+            MaterialTheme.colorScheme.primaryContainer
+        } else MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(8.dp),
         border = if (isHighlight)
-            BorderStroke(
-                1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-            ) else null
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+        else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -758,16 +838,16 @@ fun ModelButton(
                 imageVector = icon,
                 contentDescription = text,
                 tint = if (isHighlight) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else MaterialTheme.colorScheme.onSurface,
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )
             Text(
                 text = text,
                 fontSize = 13.sp,
                 color = if (isHighlight) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else MaterialTheme.colorScheme.onSurface,
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = if (isHighlight) FontWeight.Medium else FontWeight.Normal
             )
         }
@@ -1007,7 +1087,7 @@ private fun ChatScreenPreviewLight() {
                         timestamp = "10:31",
                     )
                 ),
-                inputText = "",
+                inputText = TextFieldValue(""),
                 onInputChange = {},
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
@@ -1039,7 +1119,7 @@ private fun ChatScreenPreviewDark() {
             ChatScreenContent(
                 uiState = ChatUiState(),
                 messages = emptyList(),
-                inputText = "",
+                inputText = TextFieldValue(""),
                 onInputChange = {},
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
