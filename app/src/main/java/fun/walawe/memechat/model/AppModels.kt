@@ -50,12 +50,17 @@ data class DownloadUiState(
         }
 }
 
+enum class WebSearchMode {
+    None, Search, Fetch
+}
+
 data class ChatUiState(
     val isNewConversation: Boolean = true,
     val isProcessing: Boolean = false,
     val selectedImageUri: String? = null,
     val error: String? = null,
     val isThinkingEnabled: Boolean = false,
+    val webSearchMode: WebSearchMode = WebSearchMode.None,
 )
 
 data class ConversationHistory(

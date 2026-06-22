@@ -13,6 +13,7 @@ class ChatEmbedBuilder {
             currentMessage: String,
             forReasoning: Boolean = false,
             includeMediaMarker: Boolean = false,
+            webResults: List<String> = emptyList(),
         ): String {
             val sb = StringBuilder()
 
@@ -22,6 +23,12 @@ class ChatEmbedBuilder {
                 sb.append("\n\nRelevant context from past conversations:\n")
                 for (text in contextHistory) {
                     sb.append("- $text\n")
+                }
+            }
+            if (webResults.isNotEmpty()) {
+                sb.append("\n\nWeb search results:\n")
+                for (result in webResults) {
+                    sb.append("- $result\n")
                 }
             }
             sb.append("$IM_END\n")

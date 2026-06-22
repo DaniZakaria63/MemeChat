@@ -19,6 +19,7 @@ android {
         buildConfigField("String", "MODEL_FILENAME_MINICPM",project.properties["FILENAME_MINICPM_V2_Q4_KM"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", project.properties["FILENAME_MINICPM_MMPROJ"].toString())
         buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", project.properties["DEFAULT_SYSTEM_PROMPT"].toString())
+        buildConfigField("String", "MCP_KEENABLE_API_KEY", project.properties["MCP_KEENABLE_API_KEY"].toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")

@@ -5,12 +5,14 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import `fun`.walawe.constant.BASE_URL_CALL
+import `fun`.walawe.constant.KEENABLE_API_KEY
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
+import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -33,6 +35,25 @@ object NetworkModule {
     }
 
     @Provides
+    @Singleton
+    @KeenableWebSearchMCP
+    fun providesKeenableWebSearch(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .addHeader("X-API-Key", KEENABLE_API_KEY)
+                    .build()
+                chain.proceed(request)
+            }
+            .addInterceptor(HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            })
+            .build()
+    }
+
+    @Provides
     fun providesWalaweClientAPI(
         @DefaultPoligemmaDownloadClassModel okHttpClient: OkHttpClient
     ): WalaweClientAPI {
@@ -48,3 +69,7 @@ object NetworkModule {
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class DefaultPoligemmaDownloadClassModel
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class KeenableWebSearchMCP

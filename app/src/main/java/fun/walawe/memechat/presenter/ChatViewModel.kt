@@ -13,6 +13,8 @@ import `fun`.walawe.local.service.ChunkHandlerService
 import `fun`.walawe.local.service.LocalDatabaseService
 import `fun`.walawe.memechat.data.ChatEmbedBuilder
 import `fun`.walawe.memechat.data.ModelRepository
+import `fun`.walawe.mcp.KeenableService
+import `fun`.walawe.memechat.model.WebSearchMode
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
@@ -43,6 +45,7 @@ import `fun`.walawe.memechat.data.ImageManipulation
 import `fun`.walawe.memechat.model.getChatRole
 import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
+import kotlin.collections.emptyList
 import kotlin.collections.indexOfFirst
 
 @HiltViewModel
@@ -53,6 +56,7 @@ class ChatViewModel @Inject constructor(
     private val localDBService: LocalDatabaseService,
     private val embeddingEngine: EmbeddingEngine,
     private val chunkHandlerService: ChunkHandlerService,
+    private val keenableService: KeenableService,
 ) : BaseViewModel() {
 
     private val _modelState = MutableStateFlow<InferenceEngine.State>(InferenceEngine.State.Uninitialized).also { flow ->
@@ -223,12 +227,34 @@ class ChatViewModel @Inject constructor(
                 .sortedBy { it.sequence }
                 .map { it.text }
 
+            val webResults = when (_uiState.value.webSearchMode) {
+                WebSearchMode.Search -> runCatching {
+                    parseWebResults(keenableService.searchWebPages(message))
+                }.getOrElse {
+                    Timber.w(it, "Web search failed")
+                    emptyList()
+                }
+                WebSearchMode.Fetch -> runCatching {
+                    val content = keenableService.fetchPageContent(message.trim())
+                    listOf("Fetched content: ${content.take(1000)}")
+                }.getOrElse {
+                    Timber.w(it, "Page fetch failed")
+                    emptyList()
+                }
+                WebSearchMode.None -> emptyList()
+            }
+
+            if (webResults.isNotEmpty()) {
+                Timber.d("Web search returned %d results: %s", webResults.size, webResults.joinToString(" | "))
+            }
+
             val constructedPrompt = ChatEmbedBuilder.buildWithContext(
                 systemPrompt = DEFAULT_MODEL_SYSTEM_PROMPT,
                 contextHistory = constructiveContextMessages,
                 currentMessage = message,
                 forReasoning = forReasoning,
                 includeMediaMarker = imageBitmap != null,
+                webResults = webResults,
             )
 
             /**
@@ -305,8 +331,13 @@ class ChatViewModel @Inject constructor(
 
             Timber.d("sendMessage: saved assistant msg + updated conversation $conversationId")
 
+            _uiState.update { it.copy(webSearchMode = WebSearchMode.None) }
             finishAssistantStream(assistantId)
         }
+    }
+
+    fun setWebSearchMode(mode: WebSearchMode) {
+        _uiState.update { it.copy(webSearchMode = mode) }
     }
 
     override fun onCleared() {
@@ -408,6 +439,30 @@ class ChatViewModel @Inject constructor(
     fun toggleThinking() {
         _uiState.update { it.copy(isThinkingEnabled = !it.isThinkingEnabled) }
         Timber.d("Reasoning mode: ${_uiState.value.isThinkingEnabled}")
+    }
+
+    private fun parseWebResults(json: String): List<String> {
+        return try {
+            val obj = org.json.JSONObject(json)
+            val results = obj.optJSONArray("results")
+                ?: obj.optJSONArray("data")
+                ?: obj.optJSONArray("items")
+                ?: return emptyList()
+            (0 until minOf(results.length(), 5)).mapNotNull { i ->
+                val item = results.getJSONObject(i)
+                val title = item.optString("title", "").trim()
+                val snippet = item.optString("content", "").take(300).replace("\n", " ").trim()
+                when {
+                    title.isNotBlank() && snippet.isNotBlank() -> "$title: $snippet"
+                    title.isNotBlank() -> title
+                    snippet.isNotBlank() -> snippet
+                    else -> null
+                }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to parse web results")
+            emptyList()
+        }
     }
 
     private fun postError(message: String) {
