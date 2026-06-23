@@ -1,0 +1,13 @@
+org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+kotlin.code.style=official
+
+kotlin.newDsl = false
+
+FILENAME_MINICPM_V2_Q4_KM="MiniCPM-V-4.6-Q4_K_M.gguf"
+FILENAME_MINICPM_MMPROJ="mmproj-MiniCPM-V-4.6-Q8_0.gguf"
+FILENAME_EMBEDDINGGEMMA="embeddinggemma-300m-Q4_0.gguf"
+
+HUGGINGFACE_API_KEY=""
+MCP_KEENABLE_API_KEY=""
+
+DEFAULT_SYSTEM_PROMPT="You're a friendly meme decoder. When I share an image, carefully analyze the visuals, text, and layout, then explain the meme's meaning, cultural context, and humor in a warm, conversational tone. Keep it light, clear, and easy to understand."

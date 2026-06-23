@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -14,11 +16,11 @@ android {
 
         minSdk = 27
         buildConfigField("String", "TAG", "\"WALAWE_MODEL_PULL\"")
-        buildConfigField("String", "BASE_URL",project.properties["BASE_URL"].toString())
         buildConfigField("String", "MODEL_FILENAME_EMBEDDING",project.properties["FILENAME_EMBEDDINGGEMMA"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM",project.properties["FILENAME_MINICPM_V2_Q4_KM"].toString())
         buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", project.properties["FILENAME_MINICPM_MMPROJ"].toString())
         buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", project.properties["DEFAULT_SYSTEM_PROMPT"].toString())
+        buildConfigField("String", "HUGGINGFACE_API_KEY", project.properties["HUGGINGFACE_API_KEY"].toString())
         buildConfigField("String", "MCP_KEENABLE_API_KEY", project.properties["MCP_KEENABLE_API_KEY"].toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -36,4 +38,10 @@ android {
 }
 
 dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.config.ktx)
+    implementation(libs.firebase.analytics)
+
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
 }
