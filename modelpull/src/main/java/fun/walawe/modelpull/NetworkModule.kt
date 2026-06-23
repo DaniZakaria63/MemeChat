@@ -4,7 +4,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import `fun`.walawe.constant.BASE_URL_CALL
+import `fun`.walawe.constant.HUGGINGFACE_API_KEY
 import `fun`.walawe.constant.KEENABLE_API_KEY
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import okhttp3.OkHttpClient
@@ -19,8 +19,8 @@ import javax.inject.Singleton
 object NetworkModule {
 
     @Provides
-    @DefaultPoligemmaDownloadClassModel
-    fun providesDefaultModelOkHttpClient(): OkHttpClient {
+    @HuggingFaceOkHttpClient
+    fun providesHuggingFaceOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
@@ -28,6 +28,12 @@ object NetworkModule {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                        .addHeader("Authorization", "Bearer $HUGGINGFACE_API_KEY")
+                        .build()
+                chain.proceed(request)
+            }
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
@@ -55,10 +61,10 @@ object NetworkModule {
 
     @Provides
     fun providesWalaweClientAPI(
-        @DefaultPoligemmaDownloadClassModel okHttpClient: OkHttpClient
+        @HuggingFaceOkHttpClient okHttpClient: OkHttpClient
     ): WalaweClientAPI {
         return Retrofit.Builder()
-            .baseUrl(BASE_URL_CALL)
+            .baseUrl("http://mcp.org")
             .client(okHttpClient)
             .build()
             .create(WalaweClientAPI::class.java)
@@ -68,7 +74,7 @@ object NetworkModule {
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
-annotation class DefaultPoligemmaDownloadClassModel
+annotation class HuggingFaceOkHttpClient
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)

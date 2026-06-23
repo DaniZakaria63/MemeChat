@@ -7,12 +7,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import `fun`.walawe.constant.DEFAULT_EMBEDDING_DOWNLOADER_URI
-import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
-import `fun`.walawe.constant.DEFAULT_MMPROJ_DOWNLOADER_URI
-import `fun`.walawe.constant.MODEL_FILENAME_EMBEDDING
-import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
-import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_EMBEDDING
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.ModelUrlProvider
 import `fun`.walawe.constant.orZero
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheKey
@@ -30,24 +28,25 @@ class ModelDownloadWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val modelDownloader: ModelDownloader,
     private val modelCache: ModelCache,
+    private val modelUrlProvider: ModelUrlProvider,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
         val targets = listOf(
             DownloadTarget(
-                uri = DEFAULT_MODEL_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM,
+                uri = modelUrlProvider.getModelUrl(),
+                fileName = MODEL_DISPLAYNAME_MINICPM_LLM,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Model
             ),
             DownloadTarget(
-                uri = DEFAULT_MMPROJ_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM_MMPROJ,
+                uri = modelUrlProvider.getMmprojUrl(),
+                fileName = MODEL_DISPLAYNAME_MINICPM_MMPROJ,
                 cacheModel = true,
                 keyCacheModel = CacheKey.MMPROJ
             ),
             DownloadTarget(
-                uri = DEFAULT_EMBEDDING_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_EMBEDDING,
+                uri = modelUrlProvider.getEmbeddingUrl(),
+                fileName = MODEL_DISPLAYNAME_EMBEDDING,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Embedding
             )
