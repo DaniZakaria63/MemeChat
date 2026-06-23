@@ -4,8 +4,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import `fun`.walawe.constant.HUGGINGFACE_API_KEY
-import `fun`.walawe.constant.KEENABLE_API_KEY
+import `fun`.walawe.constant.ModelUrlProvider
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -20,7 +19,9 @@ object NetworkModule {
 
     @Provides
     @HuggingFaceOkHttpClient
-    fun providesHuggingFaceOkHttpClient(): OkHttpClient {
+    fun providesHuggingFaceOkHttpClient(
+        modelUrlProvider: ModelUrlProvider
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
@@ -28,28 +29,30 @@ object NetworkModule {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
-            .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
-                        .addHeader("Authorization", "Bearer $HUGGINGFACE_API_KEY")
-                        .build()
-                chain.proceed(request)
-            }
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                        .addHeader("Authorization", "Bearer ${modelUrlProvider.getHuggingFaceApiKey()}")
+                        .build()
+                chain.proceed(request)
+            }
             .build()
     }
 
     @Provides
     @Singleton
     @KeenableWebSearchMCP
-    fun providesKeenableWebSearch(): OkHttpClient {
+    fun providesKeenableWebSearch(
+        modelUrlProvider: ModelUrlProvider
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .addHeader("X-API-Key", KEENABLE_API_KEY)
+                    .addHeader("X-API-Key", modelUrlProvider.getMcpKeenableApiKey())
                     .build()
                 chain.proceed(request)
             }
