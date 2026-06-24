@@ -28,6 +28,8 @@ enum class DownloadStatus {
     Downloading,
     Completed,
     Error,
+    InsufficientStorage,
+    InsufficientRam,
 }
 
 data class DownloadUiState(
@@ -38,6 +40,7 @@ data class DownloadUiState(
     val fileName: String? = null,
     val fileIndex: Int = 0,
     val fileCount: Int = 0,
+    val compatibilityMessage: String? = null,
 ) {
     val isDownloading: Boolean
         get() = status == DownloadStatus.Downloading

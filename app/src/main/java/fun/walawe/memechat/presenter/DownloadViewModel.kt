@@ -17,18 +17,45 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import `fun`.walawe.memechat.compat.CompatibilityResult
+import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
 class DownloadViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadUiState())
     val uiState = _uiState.asStateFlow()
 
     init {
-        observeWorker()
+        checkCompatibility()
+    }
+
+    private fun checkCompatibility() {
+        when (val result = deviceCompatibilityChecker.runChecks()) {
+            is CompatibilityResult.InsufficientStorage -> {
+                _uiState.update {
+                    it.copy(
+                        status = DownloadStatus.InsufficientStorage,
+                        compatibilityMessage = result.message,
+                    )
+                }
+            }
+            is CompatibilityResult.InsufficientRam -> {
+                _uiState.update {
+                    it.copy(
+                        status = DownloadStatus.InsufficientRam,
+                        compatibilityMessage = result.message,
+                    )
+                }
+            }
+            is CompatibilityResult.Ok -> {
+                observeWorker()
+            }
+        }
     }
 
     private fun observeWorker() {

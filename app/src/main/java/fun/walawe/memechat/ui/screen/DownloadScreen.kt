@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import android.app.Activity
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
@@ -30,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,8 @@ fun DownloadScreen(
         DownloadStatus.Error -> DownloadState.ERROR
         DownloadStatus.Completed -> DownloadState.SUCCESS
         DownloadStatus.Downloading -> DownloadState.LOADING
+        DownloadStatus.InsufficientStorage -> DownloadState.BLOCKED
+        DownloadStatus.InsufficientRam -> DownloadState.BLOCKED
         else -> DownloadState.LOADING
     }
 
@@ -78,6 +83,7 @@ fun DownloadScreen(
                 message = uiState.errorMessage.orEmpty().ifEmpty { "Please retry." },
                 onRetry = viewModel::retryDownload
             )
+            DownloadState.BLOCKED -> DownloadBlockedScreen(uiState = uiState)
 
             else -> DownloadLoadingScreen(isComplete = false, uiState = uiState)
         }
@@ -223,7 +229,61 @@ private fun DownloadErrorScreen(
 }
 
 
-private enum class DownloadState { LOADING, ERROR, SUCCESS }
+@Composable
+private fun DownloadBlockedScreen(uiState: DownloadUiState) {
+    val isStorage = uiState.status == DownloadStatus.InsufficientStorage
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.errorContainer
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = if (isStorage) "Insufficient Storage" else "Low Memory Device",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = uiState.compatibilityMessage.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            val context = LocalContext.current
+            FilledTonalButton(
+                onClick = { (context as? Activity)?.finishAffinity() },
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.height(48.dp)
+            ) {
+                Icon(
+                    Icons.Default.Close, contentDescription = null, modifier = Modifier.size(
+                        ButtonDefaults.IconSize
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Close App")
+            }
+        }
+    }
+}
+
+
+private enum class DownloadState { LOADING, ERROR, SUCCESS, BLOCKED }
 
 private fun formatBytes(bytes: Long): String {
     val kb = 1024.0
@@ -255,4 +315,15 @@ fun PreviewDownloadLoadingScreen(){
 @Composable
 fun PreviewDownloadCompleteScreen(){
     DownloadLoadingScreen(isComplete = true, uiState = DownloadUiState())
+}
+
+@Preview
+@Composable
+fun PreviewDownloadBlockedScreen(){
+    DownloadBlockedScreen(
+        uiState = DownloadUiState(
+            status = DownloadStatus.InsufficientStorage,
+            compatibilityMessage = "Need 2.0 GB free, only 500 MB available. Free up space and try again."
+        )
+    )
 }

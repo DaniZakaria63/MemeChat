@@ -20,6 +20,7 @@ import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
 import `fun`.walawe.modelpull.service.ModelDownloader
 import timber.log.Timber
+import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
 import java.net.UnknownHostException
 
 @HiltWorker
@@ -29,8 +30,16 @@ class ModelDownloadWorker @AssistedInject constructor(
     private val modelDownloader: ModelDownloader,
     private val modelCache: ModelCache,
     private val modelUrlProvider: ModelUrlProvider,
+    private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
+        if (!deviceCompatibilityChecker.isStorageSufficient()) {
+            Timber.w("Insufficient storage in worker — aborting download")
+            return Result.failure(workDataOf(
+                "error_type" to "InsufficientStorage",
+                "error_message" to "Not enough free storage space. Please free up space and try again."
+            ))
+        }
         val targets = listOf(
             DownloadTarget(
                 uri = modelUrlProvider.getModelUrl(),
