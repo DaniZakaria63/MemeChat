@@ -3,7 +3,7 @@ package `fun`.walawe.memechat.ui.screen
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -110,7 +110,11 @@ private fun SettingsScreenContent(
             item { SettingsSection(title = "Device Info", rows = uiState.deviceInfo) }
             item { SettingsSection(title = "Backend Info", rows = uiState.backendInfo) }
             item { SettingsSection(title = "Model Info", rows = uiState.modelInfo) }
+            if (uiState.cacheInfo.isNotEmpty()) {
+                item { SettingsSection(title = "Cache Info", rows = uiState.cacheInfo) }
+            }
             item {
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = onClear,
                     modifier = Modifier
@@ -137,40 +141,42 @@ private fun SettingsScreenContent(
 @Composable
 private fun SettingsSection(title: String, rows: List<Pair<String, String>>) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        elevation = CardDefaults.cardElevation(6.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = title,
-                fontSize = 18.sp,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             )
-            rows.forEach { (label, value) ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            rows.forEachIndexed { index, (label, value) ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Text(
                         text = label,
-                        fontSize = 14.sp,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.End
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = value,
-                        fontSize = 15.sp,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End
+                    )
+                }
+                if (index < rows.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                     )
                 }
             }

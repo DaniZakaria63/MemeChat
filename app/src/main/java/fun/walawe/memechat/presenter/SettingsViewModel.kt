@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import `fun`.walawe.memechat.gguf.GgufQuantReader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -161,15 +162,18 @@ class SettingsViewModel @Inject constructor(
         withContext(Dispatchers.IO) {
             val modelPath  = modelRepository.getCachedModel(CacheKey.Model).getOrNull()
             val mmprojPath = modelRepository.getCachedModel(CacheKey.MMPROJ).getOrNull()
+            val embedPath  = modelRepository.getCachedModel(CacheKey.Embedding).getOrNull()
 
             val modelFile  = modelPath?.let { File(it) }
             val mmprojFile = mmprojPath?.let { File(it) }
+            val embedFile  = embedPath?.let { File(it) }
 
-            // Parse info from file name — e.g. "MiniCPM-V-4_6-Q4_K_M.gguf"
             val modelName   = modelFile?.nameWithoutExtension ?: "Not loaded"
-            val quant       = extractQuantization(modelFile?.name)
+            val quant       = GgufQuantReader.readFileType(modelPath) ?: "Unknown"
             val mmprojName  = mmprojFile?.nameWithoutExtension ?: "Not loaded"
-            val mmprojQuant = extractQuantization(mmprojFile?.name)
+            val mmprojQuant = GgufQuantReader.readFileType(mmprojPath) ?: "Unknown"
+            val embedName   = embedFile?.nameWithoutExtension ?: "Not loaded"
+            val embedQuant  = GgufQuantReader.readFileType(embedPath) ?: "Unknown"
 
             // App process memory usage
             val runtime    = Runtime.getRuntime()
@@ -177,7 +181,8 @@ class SettingsViewModel @Inject constructor(
 
             val modelSize  = modelFile?.length() ?: 0L
             val mmprojSize = mmprojFile?.length() ?: 0L
-            val totalModelMem = modelSize + mmprojSize
+            val embedSize  = embedFile?.length() ?: 0L
+            val totalModelMem = modelSize + mmprojSize + embedSize
 
             buildList {
                 // ── LLM ──
@@ -186,14 +191,16 @@ class SettingsViewModel @Inject constructor(
                 add("Quantization"   to quant)
                 add("Model Size"     to formatBytes(modelSize))
                 add("Context Size"   to "4096 tokens")
-                add("Location"       to (modelPath ?: "N/A"))
 
                 // ── MMProj ──
-                add("MMProj File"    to mmprojName)
                 add("MMProj Note"    to "Vision encoder projection — maps image patches to LLM embedding space")
                 add("MMProj Quant"   to mmprojQuant)
                 add("MMProj Size"    to formatBytes(mmprojSize))
-                add("MMProj Path"    to (mmprojPath ?: "N/A"))
+
+                // ── Embedding ──
+                add("Embedding Name" to embedName)
+                add("Embedding Quant" to embedQuant)
+                add("Embedding Size" to formatBytes(embedSize))
 
                 // ── Memory ──
                 add("Model Memory"   to formatBytes(totalModelMem))
@@ -201,13 +208,6 @@ class SettingsViewModel @Inject constructor(
                 add("App Max Heap"   to formatBytes(runtime.maxMemory()))
             }
         }
-
-    // Extracts quant string from filename: "Q4_K_M", "Q8_0", "F16" etc.
-    private fun extractQuantization(filename: String?): String {
-        if (filename == null) return "Unknown"
-        val pattern = Regex("(IQ[0-9]_[A-Z]+|Q[0-9]+_[A-Z0-9_]+|F16|F32|BF16)", RegexOption.IGNORE_CASE)
-        return pattern.find(filename)?.value?.uppercase() ?: "Unknown"
-    }
 
     // ── Formatting ────────────────────────────────────────────────────────
     private fun formatBytes(bytes: Long): String {
