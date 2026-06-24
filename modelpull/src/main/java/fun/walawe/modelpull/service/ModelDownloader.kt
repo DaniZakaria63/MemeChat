@@ -3,6 +3,7 @@ package `fun`.walawe.modelpull.service
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.constant.ModelUrlProvider
+import `fun`.walawe.constant.MODEL_DIR_NAME
 import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_LLM
 import `fun`.walawe.modelpull.api.WalaweClientAPI
 import `fun`.walawe.modelpull.model.BadRequestException
@@ -33,7 +34,7 @@ class LocalModelDownloader @Inject constructor(
 ) : ModelDownloader {
 
     private val modelDir: File by lazy {
-        val dir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        val dir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
         if (!dir.exists() && !dir.mkdirs()) {
             error("Failed to create model directory: ${dir.absolutePath}")
         }

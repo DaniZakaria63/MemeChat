@@ -4,6 +4,7 @@ import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import `fun`.walawe.constant.MODEL_DIR_NAME
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -54,7 +55,7 @@ class LocalModelDownloaderTest {
 
     @Test
     fun testGetModelWarning(): Unit = runBlocking {
-        val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        val modelDir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
         val localFile = File(modelDir, "model.tflite")
         localFile.createNewFile()
 

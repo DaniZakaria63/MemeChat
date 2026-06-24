@@ -18,3 +18,5 @@ const val KEENABLE_API_KEY = BuildConfig.MCP_KEENABLE_API_KEY
 const val HUGGINGFACE_API_KEY = BuildConfig.HUGGINGFACE_API_KEY
 
 const val FIREBASE_ANALYTICS_KEY_FETCH_ERROR = "remote_config_fetch_error"
+
+const val MODEL_DIR_NAME = "ml_models"

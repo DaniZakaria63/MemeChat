@@ -4,6 +4,7 @@ import android.content.Context
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.service.ModelDownloader
+import `fun`.walawe.constant.MODEL_DIR_NAME
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
@@ -24,7 +25,7 @@ class FakeModelDownloader(
     }
 
     private fun createModel(fileName: String): CacheModel {
-        val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        val modelDir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
         val file = File(modelDir, fileName.ifBlank { "model.tflite" })
         file.parentFile?.mkdirs()
         if (!file.exists()) {
