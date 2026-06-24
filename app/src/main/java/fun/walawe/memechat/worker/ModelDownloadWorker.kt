@@ -7,12 +7,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import `fun`.walawe.constant.DEFAULT_EMBEDDING_DOWNLOADER_URI
-import `fun`.walawe.constant.DEFAULT_MODEL_DOWNLOADER_URI
-import `fun`.walawe.constant.DEFAULT_MMPROJ_DOWNLOADER_URI
-import `fun`.walawe.constant.MODEL_FILENAME_EMBEDDING
-import `fun`.walawe.constant.MODEL_FILENAME_MINICPM
-import `fun`.walawe.constant.MODEL_FILENAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_EMBEDDING
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
+import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
+import `fun`.walawe.constant.ModelUrlProvider
 import `fun`.walawe.constant.orZero
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheKey
@@ -22,6 +20,7 @@ import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
 import `fun`.walawe.modelpull.service.ModelDownloader
 import timber.log.Timber
+import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
 import java.net.UnknownHostException
 
 @HiltWorker
@@ -30,24 +29,33 @@ class ModelDownloadWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val modelDownloader: ModelDownloader,
     private val modelCache: ModelCache,
+    private val modelUrlProvider: ModelUrlProvider,
+    private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
 ): CoroutineWorker(appContext, workerParams){
     override suspend fun doWork(): Result {
+        if (!deviceCompatibilityChecker.isStorageSufficient()) {
+            Timber.w("Insufficient storage in worker — aborting download")
+            return Result.failure(workDataOf(
+                "error_type" to "InsufficientStorage",
+                "error_message" to "Not enough free storage space. Please free up space and try again."
+            ))
+        }
         val targets = listOf(
             DownloadTarget(
-                uri = DEFAULT_MODEL_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM,
+                uri = modelUrlProvider.getModelUrl(),
+                fileName = MODEL_DISPLAYNAME_MINICPM_LLM,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Model
             ),
             DownloadTarget(
-                uri = DEFAULT_MMPROJ_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_MINICPM_MMPROJ,
+                uri = modelUrlProvider.getMmprojUrl(),
+                fileName = MODEL_DISPLAYNAME_MINICPM_MMPROJ,
                 cacheModel = true,
                 keyCacheModel = CacheKey.MMPROJ
             ),
             DownloadTarget(
-                uri = DEFAULT_EMBEDDING_DOWNLOADER_URI,
-                fileName = MODEL_FILENAME_EMBEDDING,
+                uri = modelUrlProvider.getEmbeddingUrl(),
+                fileName = MODEL_DISPLAYNAME_EMBEDDING,
                 cacheModel = true,
                 keyCacheModel = CacheKey.Embedding
             )

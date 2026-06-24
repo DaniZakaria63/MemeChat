@@ -8,6 +8,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import `fun`.walawe.constant.MODEL_DIR_NAME
 import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
@@ -91,7 +92,7 @@ class ModelDownloadWorkerTest {
         val result = buildWorker().doWork()
 
         assertTrue(result is ListenableWorker.Result.Success)
-        val modelFile = File(context.getDir("ml_models", Context.MODE_PRIVATE), "model.tflite")
+        val modelFile = File(context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE), "model.tflite")
         assertTrue(modelFile.exists())
         assertNotNull(modelCache.getModel(CacheKey.Model))
     }
@@ -119,7 +120,7 @@ class ModelDownloadWorkerTest {
     }
 
     private fun createCachedModel(): CacheModel {
-        val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        val modelDir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
         val file = File(modelDir, "model.tflite")
         file.parentFile?.mkdirs()
         file.writeText("cached model")
@@ -134,7 +135,7 @@ class ModelDownloadWorkerTest {
     }
 
     private fun deleteModelFile() {
-        val modelDir = context.getDir("ml_models", Context.MODE_PRIVATE)
+        val modelDir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
         File(modelDir, "model.tflite").delete()
     }
 }
