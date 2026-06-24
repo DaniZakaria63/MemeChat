@@ -1,0 +1,8 @@
+MemeChat is an AI-powered chat application that understands memes. It uses on-device AI to analyze images, explain cultural context, and decode humor in memes. With web search integration via MCP, it can fetch real-time information to provide richer responses.
+
+Features:
+- On-device AI inference (no cloud dependency)
+- Meme analysis and explanation
+- Web search integration
+- Local conversation history
+- Privacy-first (all processing on device)
