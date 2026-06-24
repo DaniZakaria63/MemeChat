@@ -193,39 +193,26 @@ cp -r SPIRV-Headers/include/spirv \
    "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/"
 ```
 
-## Module Dependency Graph (Gradle)
+### Required: Firebase Remote Config & google-services.json
 
-```
-// app/build.gradle
-dependencies {
-    implementation(project(":local"))
-    implementation(project(":memelm"))
-    implementation(project(":modelpull"))
-    implementation(project(":constant"))
-}
+This app uses **Firebase Remote Config** to serve model download URLs and API keys at runtime.
 
-// local/build.gradle
-dependencies {
-    implementation(project(":memelm"))    // EmbeddingEngine
-    implementation(project(":vector"))    // VectorStore
-    implementation(project(":constant"))
-}
+1. Create a Firebase project at https://console.firebase.google.com
+2. Register your Android app with package name `fun.walawe.memechat` and download `google-services.json`
+3. Place it at `app/google-services.json`
+4. Go to **Remote Config** in the Firebase Console and add these parameters:
 
-// vector/build.gradle
-// no Gradle module deps (pure JNI + FAISS C++)
+| Key | Purpose | Example Value                                                                                                                                                                                                                                       |
+|---|---|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `filename_model_llm` | LLM model relative path | `https://huggingface.co/ggml-org/MiniCPM-V-4.6-GGUF/resolve/main/MiniCPM-V-4.6-Q4_K_M.gguf`                                                                                                                                                         |
+| `filename_model_mmproj` | MMProj relative path | `https://huggingface.co/ggml-org/MiniCPM-V-4.6-GGUF/resolve/main/mmproj-MiniCPM-V-4.6-Q8_0.gguf`                                                                                                                                                    |
+| `filename_model_embedding` | Embedding model relative path | `https://huggingface.co/unsloth/embeddinggemma-300m-GGUF/resolve/main/embeddinggemma-300m-Q4_0.gguf`                                                                                                                                                |
+| `huggingface_api_key` | HuggingFace read token (optional) | `hf_...`                                                                                                                                                                                                                                            |
+| `mcp_keenable_api_key` | Keenable web search API key (optional) | `keen_...`                                                                                                                                                                                                                                          |
 
-// memelm/build.gradle
-dependencies {
-    implementation(project(":constant"))
-}
+### Required: gradle.properties
 
-// modelpull/build.gradle
-dependencies {
-    implementation(project(":constant"))
-}
-
-// constant/build.gradle
-```
+Copy and edit `gradle.properties.example` from the project root into `gradle.properties`. Put your default values there.
 
 ---
 
