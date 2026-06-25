@@ -16,12 +16,12 @@ android {
 
         minSdk = 27
         buildConfigField("String", "TAG", "\"WALAWE_MODEL_PULL\"")
-        buildConfigField("String", "MODEL_FILENAME_EMBEDDING",project.properties["FILENAME_EMBEDDINGGEMMA"].toString())
-        buildConfigField("String", "MODEL_FILENAME_MINICPM",project.properties["FILENAME_MINICPM_V2_Q4_KM"].toString())
-        buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", project.properties["FILENAME_MINICPM_MMPROJ"].toString())
-        buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", project.properties["DEFAULT_SYSTEM_PROMPT"].toString())
-        buildConfigField("String", "HUGGINGFACE_API_KEY", project.properties["HUGGINGFACE_API_KEY"].toString())
-        buildConfigField("String", "MCP_KEENABLE_API_KEY", project.properties["MCP_KEENABLE_API_KEY"].toString())
+        buildConfigField("String", "MODEL_FILENAME_EMBEDDING", "\"${Secrets.get(project, "FILENAME_EMBEDDINGGEMMA")}\"")
+        buildConfigField("String", "MODEL_FILENAME_MINICPM", "\"${Secrets.get(project, "FILENAME_MINICPM_V2_Q4_KM")}\"")
+        buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", "\"${Secrets.get(project, "FILENAME_MINICPM_MMPROJ")}\"")
+        buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", "\"${Secrets.get(project, "DEFAULT_SYSTEM_PROMPT")}\"")
+        buildConfigField("String", "HUGGINGFACE_API_KEY", "\"${Secrets.get(project, "HUGGINGFACE_API_KEY")}\"")
+        buildConfigField("String", "MCP_KEENABLE_API_KEY", "\"${Secrets.get(project, "MCP_KEENABLE_API_KEY")}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
