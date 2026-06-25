@@ -213,7 +213,6 @@ fun ChatScreen(
     )
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatScreenContent(
@@ -853,7 +852,6 @@ fun ModelButton(
     }
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun LoopingWebmSnippet(
     modifier: Modifier = Modifier
