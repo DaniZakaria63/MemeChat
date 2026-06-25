@@ -14,6 +14,7 @@ android {
 
     defaultConfig {
         minSdk = 27
+        testInstrumentationRunner = "fun.walawe.mcp.CustomTestRunner"
     }
 
     compileOptions {
@@ -31,4 +32,12 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.jetbrains.coroutine.test)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
 }
