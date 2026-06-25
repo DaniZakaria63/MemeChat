@@ -22,3 +22,8 @@
 
 # Room
 -keep class * extends androidx.room.RoomDatabase
+
+# Firebase Crashlytics NDK — native crash reporting via JNI
+-keep class com.google.firebase.crashlytics.ndk.FirebaseCrashlyticsNdk { public *; }
+-keep public class com.google.firebase.crashlytics.ndk.CrashpadMain { public *; }
+-keep class com.google.firebase.crashlytics.ndk.JniNativeApi { native <methods>; }

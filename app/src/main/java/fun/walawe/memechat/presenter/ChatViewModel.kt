@@ -158,6 +158,7 @@ class ChatViewModel @Inject constructor(
         val forReasoning = _uiState.value.isThinkingEnabled
         val isNewConversation = _currentConversationId.value == null
         val conversationId = _currentConversationId.value ?: UUID.randomUUID().toString()
+        if (isNewConversation) _currentConversationId.value = conversationId
         val currentTimeMilis = System.currentTimeMillis()
 
         safeViewModelScope.launch {
