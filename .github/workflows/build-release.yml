@@ -39,9 +39,10 @@ jobs:
           fi
 
       - name: Build signed AAB and APK
-        run: ./gradlew bundleRelease assembleRelease \
-          -PappVersionCode=${{ github.run_number }} \
-          -PappVersionName=${{ env.APP_VERSION_NAME }}
+        run: |
+          ./gradlew bundleRelease assembleRelease \
+            -PappVersionCode=${{ github.run_number }} \
+            -PappVersionName=$APP_VERSION_NAME
         env:
           HUGGINGFACE_API_KEY: ${{ secrets.PROD_HUGGINGFACE_API_KEY }}
           MCP_KEENABLE_API_KEY: ${{ secrets.PROD_MCP_KEENABLE_API_KEY }}

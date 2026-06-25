@@ -34,9 +34,10 @@ jobs:
           fi
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug \
-          -PappVersionCode=${{ github.run_number }} \
-          -PappVersionName=${{ env.APP_VERSION_NAME }}
+        run: |
+          ./gradlew assembleDebug \
+            -PappVersionCode=${{ github.run_number }} \
+            -PappVersionName=$APP_VERSION_NAME
         env:
           HUGGINGFACE_API_KEY: ${{ secrets.BETA_HUGGINGFACE_API_KEY }}
           MCP_KEENABLE_API_KEY: ${{ secrets.BETA_MCP_KEENABLE_API_KEY }}
