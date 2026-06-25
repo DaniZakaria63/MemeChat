@@ -19,15 +19,25 @@ android {
         applicationId = "fun.walawe.memechat"
         minSdk = 27
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = Secrets.versionCode(project)
+        versionName = Secrets.versionName(project)
 
         testInstrumentationRunner = "fun.walawe.memechat.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore/meme_chat_upload.keystore")
+            storePassword = Secrets.get(project, "KEYSTORE_PASSWORD")
+            keyAlias = Secrets.get(project, "KEY_ALIAS")
+            keyPassword = Secrets.get(project, "KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

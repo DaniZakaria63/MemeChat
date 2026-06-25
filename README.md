@@ -210,9 +210,21 @@ This app uses **Firebase Remote Config** to serve model download URLs and API ke
 | `huggingface_api_key` | HuggingFace read token (optional) | `hf_...`                                                                                                                                                                                                                                            |
 | `mcp_keenable_api_key` | Keenable web search API key (optional) | `keen_...`                                                                                                                                                                                                                                          |
 
-### Required: gradle.properties
+### Required: secrets.properties
 
-Copy and edit `gradle.properties.example` from the project root into `gradle.properties`. Put your default values there.
+Copy and edit `secrets.properties.example` from the project root into `secrets.properties`. Put your default values there:
+
+```properties
+FILENAME_MINICPM_V2_Q4_KM=http://192.168.0.103:8081/minicpm/MiniCPM-V-4.6-Q4_K_M.gguf
+FILENAME_MINICPM_MMPROJ=http://192.168.0.103:8081/minicpm/mmproj-MiniCPM-V-4.6-Q8_0.gguf
+FILENAME_EMBEDDINGGEMMA=http://192.168.0.103:8081/embeddinggemma-300m-Q4_0.gguf
+HUGGINGFACE_API_KEY=hf_...
+MCP_KEENABLE_API_KEY=keen_...
+DEFAULT_SYSTEM_PROMPT=You're a friendly meme decoder...
+```
+
+> **secrets.properties** is gitignored and will not be committed.  
+> **Priority order**: Firebase Remote Config > `secrets.properties` (local) > environment variables (CI/CD).
 
 ---
 

@@ -9,6 +9,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import `fun`.walawe.constant.MODEL_DIR_NAME
+import `fun`.walawe.constant.ModelUrlProvider
+import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
 import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.model.ModelCache
@@ -28,6 +30,12 @@ class ModelDownloadWorkerTest {
     @Inject
     @ApplicationContext
     lateinit var context: Context
+
+    @Inject
+    lateinit var modelUrlProvider: ModelUrlProvider
+
+    @Inject
+    lateinit var deviceCompatibilityChecker: DeviceCompatibilityChecker
 
     lateinit var modelCache: ModelCache
 
@@ -109,7 +117,9 @@ class ModelDownloadWorkerTest {
                     appContext,
                     workerParameters,
                     FakeModelDownloader(context),
-                    modelCache
+                    modelCache,
+                    modelUrlProvider,
+                    deviceCompatibilityChecker,
                 )
             }
         }

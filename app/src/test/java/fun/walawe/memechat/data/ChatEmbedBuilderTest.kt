@@ -95,7 +95,7 @@ class ChatEmbedBuilderTest {
             currentMessage = "",
         )
 
-        assertTrue(result.contains("<|im_start|>user\n\n"))
+        assertTrue(result.contains("<|im_start|>user\n<|im_end|>"))
     }
 
     @Test
@@ -146,8 +146,8 @@ class ChatEmbedBuilderTest {
         assertTrue("assistant must precede think", assistantIdx < thinkIdx)
         assertTrue(result.endsWith("<|im_start|>assistant\n<think>\n"))
 
-        // Each section is closed
-        val systemEndCount = result.split("<|im_end|>").size - 1
-        assertEquals(3, systemEndCount) // system, user, assistant
+        // system and user sections are closed; assistant has no closing tag
+        val endCount = result.split("<|im_end|>").size - 1
+        assertEquals(2, endCount)
     }
 }
