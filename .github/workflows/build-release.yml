@@ -23,12 +23,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Create google-services.json
-        run: |
-          cat > app/google-services.json <<'EOF'
-          ${{ secrets.GOOGLE_SERVICES_JSON }}
-          EOF
-
       - name: Decode keystore
         run: |
           mkdir -p keystore
