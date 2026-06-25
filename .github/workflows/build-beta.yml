@@ -25,7 +25,20 @@ jobs:
 
       - name: Decode google-services.json
         run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > app/google-services.json
+          printf '%s' "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > app/google-services.json
+
+      - name: Verify google-services.json
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            echo "::error file=app/google-services.json::File was not created"
+            exit 1
+          fi
+          SIZE=$(wc -c < app/google-services.json)
+          echo "google-services.json size: $SIZE bytes"
+          if [ "$SIZE" -lt 10 ]; then
+            echo "::error file=app/google-services.json::File is too small ($SIZE bytes), secret may be invalid"
+            exit 1
+          fi
 
       - name: Set version
         run: |
