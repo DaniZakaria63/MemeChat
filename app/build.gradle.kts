@@ -25,6 +25,10 @@ android {
 
         testInstrumentationRunner = "fun.walawe.memechat.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
@@ -39,7 +43,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -98,17 +103,15 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.material.icons.extended)
+
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.ui)
+
 
     implementation(libs.richtext.commonmark)
     implementation(libs.richtext.ui.material3)
 
     implementation(libs.androidx.google.fonts)
-    implementation(libs.google.accompanist.permission)
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.lottie.compose)
