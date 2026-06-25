@@ -67,6 +67,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
+    lint {
+        disable.add("QueryAllPackagesPermission")
+    }
+
     packagingOptions {
         jniLibs{
             useLegacyPackaging = true
