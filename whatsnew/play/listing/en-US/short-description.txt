@@ -1,1 +1,1 @@
-AI Chat with Web Search
+Offline AI Chat with Image, Memory & Web Search

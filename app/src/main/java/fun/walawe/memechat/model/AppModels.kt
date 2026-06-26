@@ -73,11 +73,17 @@ data class ConversationHistory(
     val time: String,
 )
 
+data class AboutInfo(
+    val versionName: String = "",
+    val versionCode: Int = 0,
+)
+
 data class SettingsUiState(
     val deviceInfo: List<Pair<String, String>> = emptyList(),
     val backendInfo: List<Pair<String, String>> = emptyList(),
     val modelInfo: List<Pair<String, String>> = emptyList(),
     val cacheInfo: List<Pair<String, String>> = emptyList(),
+    val aboutInfo: AboutInfo? = null,
 )
 
 sealed class Screen(val route: String) {
