@@ -514,14 +514,14 @@ private fun MessageBubble(
         RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 4.dp)
     }
     val bubbleColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.colorScheme.surface
     } else {
-        MaterialTheme.colorScheme.tertiaryContainer
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
     }
     val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        MaterialTheme.colorScheme.onSurface
     } else {
-        MaterialTheme.colorScheme.onTertiaryContainer
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
     val alignment = if (isUser) Alignment.End else Alignment.Start
     var collapseState by remember { mutableStateOf(true) }
@@ -550,6 +550,7 @@ private fun MessageBubble(
             shape = bubbleShape,
             colors = CardDefaults.cardColors(containerColor = bubbleColor),
             elevation = if (isUser) CardDefaults.cardElevation(0.dp) else CardDefaults.cardElevation(1.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
             modifier = modifier
         ) {
             Column(
