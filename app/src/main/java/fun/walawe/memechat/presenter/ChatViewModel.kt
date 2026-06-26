@@ -48,6 +48,8 @@ import javax.inject.Inject
 import kotlin.collections.emptyList
 import kotlin.collections.indexOfFirst
 
+private val URL_PATTERN = Regex("https?://[\\w./?=&%#@~!'-]+")
+
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val modelRepository: ModelRepository,
@@ -236,7 +238,9 @@ class ChatViewModel @Inject constructor(
                     emptyList()
                 }
                 WebSearchMode.Fetch -> runCatching {
-                    val content = keenableService.fetchPageContent(message.trim())
+                    val url = URL_PATTERN.find(message.trim())?.value?.trim()
+                        ?: message.trim()
+                    val content = keenableService.fetchPageContent(url)
                     listOf("Fetched content: ${content.take(1000)}")
                 }.getOrElse {
                     Timber.w(it, "Page fetch failed")

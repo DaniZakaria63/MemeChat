@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -728,19 +729,37 @@ private fun InputBar(
                             )
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        when (webSearchMode) {
-                                            WebSearchMode.Search -> "Search Web"
-                                            WebSearchMode.Fetch -> "Fetch URL"
-                                            WebSearchMode.None -> "Web Search"
-                                        }
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(
+                                            when (webSearchMode) {
+                                                WebSearchMode.Search -> "Search Web"
+                                                WebSearchMode.Fetch -> "Fetch URL"
+                                                WebSearchMode.None -> "Web"
+                                            }
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 },
                                 onClick = {
                                     onToggleWebSearchMode()
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Filled.Search, contentDescription = null)
+                                    Icon(
+                                        imageVector = when (webSearchMode) {
+                                            WebSearchMode.None -> Icons.Filled.Close
+                                            WebSearchMode.Search -> Icons.Filled.Search
+                                            WebSearchMode.Fetch -> Icons.Filled.Language
+                                        },
+                                        contentDescription = null,
+                                    )
                                 }
                             )
                         }
