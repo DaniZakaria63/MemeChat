@@ -105,6 +105,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -241,11 +245,36 @@ private fun ChatScreenContent(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
+            val drawerBorderColor = MaterialTheme.colorScheme.outline
             ModalDrawerSheet(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .fillMaxWidth(0.85f),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
+                    .fillMaxWidth(0.85f)
+                    .drawBehind {
+                        val strokePx = 2.dp.toPx()
+                        val r = 18.dp.toPx()
+                        val w = size.width
+                        val h = size.height
+                        val path = Path().apply {
+                            moveTo(w - r, 0f)
+                            arcTo(
+                                rect = Rect(w - 2 * r, 0f, w, 2 * r),
+                                startAngleDegrees = 270f,
+                                sweepAngleDegrees = 90f,
+                                forceMoveTo = false,
+                            )
+                            lineTo(w, h - r)
+                            arcTo(
+                                rect = Rect(w - 2 * r, h - 2 * r, w, h),
+                                startAngleDegrees = 0f,
+                                sweepAngleDegrees = 90f,
+                                forceMoveTo = false,
+                            )
+                        }
+                        drawPath(path, color = drawerBorderColor, style = Stroke(width = strokePx))
+                    },
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerShape = RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp),
             ) {
                 DrawerContent(
                     conversations = conversations,
@@ -429,16 +458,17 @@ private fun ConversationRow(
     onDelete: () -> Unit,
 ) {
     var showConfirm by remember { mutableStateOf(false) }
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer
+    val containerColor = MaterialTheme.colorScheme.surface
+    val borderStroke = if (isSelected) {
+        BorderStroke(2.dp, MaterialTheme.colorScheme.outline)
     } else {
-        MaterialTheme.colorScheme.surface
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     }
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .background(containerColor)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(12.dp))
+            .border(borderStroke, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showConfirm = true },
