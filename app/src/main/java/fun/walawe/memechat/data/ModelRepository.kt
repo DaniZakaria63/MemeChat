@@ -60,15 +60,7 @@ class ModelRepository @Inject constructor(
     }
 
     suspend fun getVectorDBPath(): String = withContext(Dispatchers.IO) {
-        val file = File(context.filesDir, DEFAULT_FILENAME_FAISS_PERSISTANCE)
-        if(file.exists()) return@withContext file.absolutePath
-
-        context.assets.open("init.faiss").use { src ->
-            file.outputStream().use { dst ->
-                src.copyTo(dst)
-            }
-        }
-        file.absolutePath
+        File(context.filesDir, DEFAULT_FILENAME_FAISS_PERSISTANCE).absolutePath
     }
 
     fun clearCache(): Result<Unit> = modelCache.deleteAllCachedFiles()

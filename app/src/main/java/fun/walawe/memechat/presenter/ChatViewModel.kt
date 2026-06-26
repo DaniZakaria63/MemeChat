@@ -43,10 +43,13 @@ import java.util.UUID
 import timber.log.Timber
 import `fun`.walawe.memechat.data.ImageManipulation
 import `fun`.walawe.memechat.model.getChatRole
+import `fun`.walawe.vector.VectorStore
 import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
 import kotlin.collections.emptyList
 import kotlin.collections.indexOfFirst
+
+private val URL_PATTERN = Regex("https?://[\\w./?=&%#@~!'-]+")
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -183,7 +186,7 @@ class ChatViewModel @Inject constructor(
              * Preprocess Image
              * This will return clean chunk
              */
-            val (chunkList, imageBitmap) = preprocessTextAndImage(
+            val (chunkList, imageBitmap, savedImagePath) = preprocessTextAndImage(
                 transientImageUri = transientImageUri,
                 conversationId = conversationId,
                 messageId = userMsgId,
@@ -203,7 +206,8 @@ class ChatViewModel @Inject constructor(
                     createdAt = currentTimeMilis,
                 ))
             }
-            _messages.update { listOf(assistantMessage, userMessage) + it }
+            val persistentImageUri = savedImagePath ?: transientImageUri
+            _messages.update { listOf(assistantMessage, userMessage.copy(imageUri = persistentImageUri)) + it }
             _uiState.update { it.copy(isNewConversation = false) }
 
             /**
@@ -236,7 +240,9 @@ class ChatViewModel @Inject constructor(
                     emptyList()
                 }
                 WebSearchMode.Fetch -> runCatching {
-                    val content = keenableService.fetchPageContent(message.trim())
+                    val url = URL_PATTERN.find(message.trim())?.value?.trim()
+                        ?: message.trim()
+                    val content = keenableService.fetchPageContent(url)
                     listOf("Fetched content: ${content.take(1000)}")
                 }.getOrElse {
                     Timber.w(it, "Page fetch failed")
@@ -284,7 +290,7 @@ class ChatViewModel @Inject constructor(
                 text = message,
                 reasoning = "",
                 timestamp = currentTimeMilis,
-                imageUri = transientImageUri,
+                imageUri = persistentImageUri,
             ))
 
             chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
@@ -354,7 +360,7 @@ class ChatViewModel @Inject constructor(
         conversationId: String,
         messageId: String,
         message: String,
-    ): Pair<List<ChunkEntity>, Bitmap?>{
+    ): Triple<List<ChunkEntity>, Bitmap?, String?> {
 
         val preprocessChunk = chunkHandlerService.preprocessAndChunk(
             messageId = messageId,
@@ -362,7 +368,7 @@ class ChatViewModel @Inject constructor(
             role = ChatRole.User.name,
             text = message
         )
-        if(transientImageUri==null) return Pair(preprocessChunk, null)
+        if(transientImageUri==null) return Triple(preprocessChunk, null, null)
 
         val savedPath = imageManipulation.copyToInternal(
             src = transientImageUri.toUri(),
@@ -377,7 +383,7 @@ class ChatViewModel @Inject constructor(
             }
         }
 
-        return Pair(preprocessChunk, bitmap)
+        return Triple(preprocessChunk, bitmap, savedPath)
     }
 
     private suspend fun prepareModel() {
@@ -412,6 +418,14 @@ class ChatViewModel @Inject constructor(
             inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
             embeddingEngine.init(embedding)
             chunkHandlerService.initVectorStore(vectorDB)
+
+            val embedDim = embeddingEngine.dimension()
+            val vectorDim = VectorStore.dimension()
+            if (vectorDim != 0 && vectorDim != embedDim) {
+                Timber.w("Vector dimension mismatch: FAISS=%d, Embedding=%d — recreating index", vectorDim, embedDim)
+                File(vectorDB).delete()
+                chunkHandlerService.initVectorStore(vectorDB)
+            }
         }
     }
 
