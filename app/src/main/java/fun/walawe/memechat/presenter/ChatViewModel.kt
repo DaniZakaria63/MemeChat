@@ -185,7 +185,7 @@ class ChatViewModel @Inject constructor(
              * Preprocess Image
              * This will return clean chunk
              */
-            val (chunkList, imageBitmap) = preprocessTextAndImage(
+            val (chunkList, imageBitmap, savedImagePath) = preprocessTextAndImage(
                 transientImageUri = transientImageUri,
                 conversationId = conversationId,
                 messageId = userMsgId,
@@ -205,7 +205,8 @@ class ChatViewModel @Inject constructor(
                     createdAt = currentTimeMilis,
                 ))
             }
-            _messages.update { listOf(assistantMessage, userMessage) + it }
+            val persistentImageUri = savedImagePath ?: transientImageUri
+            _messages.update { listOf(assistantMessage, userMessage.copy(imageUri = persistentImageUri)) + it }
             _uiState.update { it.copy(isNewConversation = false) }
 
             /**
@@ -288,7 +289,7 @@ class ChatViewModel @Inject constructor(
                 text = message,
                 reasoning = "",
                 timestamp = currentTimeMilis,
-                imageUri = transientImageUri,
+                imageUri = persistentImageUri,
             ))
 
             chunkList.zip(embeddingVectorBuffer).forEach { (chunk, vector) ->
@@ -358,7 +359,7 @@ class ChatViewModel @Inject constructor(
         conversationId: String,
         messageId: String,
         message: String,
-    ): Pair<List<ChunkEntity>, Bitmap?>{
+    ): Triple<List<ChunkEntity>, Bitmap?, String?> {
 
         val preprocessChunk = chunkHandlerService.preprocessAndChunk(
             messageId = messageId,
@@ -366,7 +367,7 @@ class ChatViewModel @Inject constructor(
             role = ChatRole.User.name,
             text = message
         )
-        if(transientImageUri==null) return Pair(preprocessChunk, null)
+        if(transientImageUri==null) return Triple(preprocessChunk, null, null)
 
         val savedPath = imageManipulation.copyToInternal(
             src = transientImageUri.toUri(),
@@ -381,7 +382,7 @@ class ChatViewModel @Inject constructor(
             }
         }
 
-        return Pair(preprocessChunk, bitmap)
+        return Triple(preprocessChunk, bitmap, savedPath)
     }
 
     private suspend fun prepareModel() {
