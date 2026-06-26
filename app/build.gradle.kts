@@ -74,6 +74,7 @@ dependencies {
     implementation(project(":modelpull"))
     implementation(project(":memelm"))
     implementation(project(":local"))
+    implementation(project(":vector"))
     implementation(project(":mcp"))
 
     implementation(libs.androidx.coroutine)

@@ -43,6 +43,7 @@ import java.util.UUID
 import timber.log.Timber
 import `fun`.walawe.memechat.data.ImageManipulation
 import `fun`.walawe.memechat.model.getChatRole
+import `fun`.walawe.vector.VectorStore
 import `fun`.walawe.memelm.inference.EmbeddingEngine
 import javax.inject.Inject
 import kotlin.collections.emptyList
@@ -417,6 +418,14 @@ class ChatViewModel @Inject constructor(
             inferenceEngine.setSystemPrompt(DEFAULT_MODEL_SYSTEM_PROMPT)
             embeddingEngine.init(embedding)
             chunkHandlerService.initVectorStore(vectorDB)
+
+            val embedDim = embeddingEngine.dimension()
+            val vectorDim = VectorStore.dimension()
+            if (vectorDim != 0 && vectorDim != embedDim) {
+                Timber.w("Vector dimension mismatch: FAISS=%d, Embedding=%d — recreating index", vectorDim, embedDim)
+                File(vectorDB).delete()
+                chunkHandlerService.initVectorStore(vectorDB)
+            }
         }
     }
 
