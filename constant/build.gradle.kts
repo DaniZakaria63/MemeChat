@@ -19,7 +19,7 @@ android {
         buildConfigField("String", "MODEL_FILENAME_EMBEDDING", "\"${Secrets.get(project, "FILENAME_EMBEDDINGGEMMA")}\"")
         buildConfigField("String", "MODEL_FILENAME_MINICPM", "\"${Secrets.get(project, "FILENAME_MINICPM_V2_Q4_KM")}\"")
         buildConfigField("String", "MODEL_FILENAME_MINICPM_MMPROJ", "\"${Secrets.get(project, "FILENAME_MINICPM_MMPROJ")}\"")
-        buildConfigField("String", "DEFAULT_SYSTEM_PROMPT", "\"${Secrets.get(project, "DEFAULT_SYSTEM_PROMPT")}\"")
+
         buildConfigField("String", "HUGGINGFACE_API_KEY", "\"${Secrets.get(project, "HUGGINGFACE_API_KEY")}\"")
         buildConfigField("String", "MCP_KEENABLE_API_KEY", "\"${Secrets.get(project, "MCP_KEENABLE_API_KEY")}\"")
 

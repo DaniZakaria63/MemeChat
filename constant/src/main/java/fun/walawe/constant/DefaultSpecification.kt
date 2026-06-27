@@ -9,7 +9,7 @@ const val MODEL_DISPLAYNAME_MINICPM_MMPROJ = "MiniCPM-Mmproj.gguf"
 const val MODEL_FILENAME_EMBEDDING = BuildConfig.MODEL_FILENAME_EMBEDDING
 const val MODEL_DISPLAYNAME_EMBEDDING = "EmbeddingGemma-300m.gguf"
 
-const val DEFAULT_MODEL_SYSTEM_PROMPT = BuildConfig.DEFAULT_SYSTEM_PROMPT
+const val DEFAULT_MODEL_SYSTEM_PROMPT = "You're a friendly meme decoder. When I share an image, carefully analyze the visuals, text, and layout, then explain the meme's meaning, cultural context, and humor in a warm, conversational tone. Keep it light, clear, and easy to understand."
 
 const val MODEL_FILENAME_OPENNLP_SENTENCE="opennlp-en-ud-ewt-sentence-1.3-2.5.4.bin"
 const val DEFAULT_FILENAME_FAISS_PERSISTANCE="chunk_vector.faiss"
