@@ -66,6 +66,8 @@ class InferenceEngineImpl private constructor(
         useVulkan: Boolean
     ): Boolean
 
+    external fun nativeProbeBackends(): String
+
     @FastNative
     external fun nativeSetSystemPrompt(prompt: String)
 

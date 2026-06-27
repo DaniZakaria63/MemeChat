@@ -2,6 +2,7 @@
 #include <string>
 #include "LLMInference.h"
 #include "EmbeddingEngine.h"
+#include "BackendProber.h"
 #include "logging.h"
 
 static LLMInference  g_inference;
@@ -109,6 +110,14 @@ JNIEXPORT jboolean JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeIsGenerating(
         JNIEnv * /* env */, jobject /* this */) {
     return g_inference.isGenerating() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeProbeBackends(
+        JNIEnv *env, jobject /* this */) {
+    BackendProbeResult result = BackendProber::probeAll();
+    std::string json = result.toJson();
+    return env->NewStringUTF(json.c_str());
 }
 
 // ============================================================================
