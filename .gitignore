@@ -16,4 +16,5 @@ keystore.properties
 keystore/
 *.keystore
 *.jks
+*.pem
 # app/google-services.json is committed — needed for CI builds

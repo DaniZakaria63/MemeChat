@@ -1,1 +1,5 @@
-Initial release: on-device AI meme chat with web search integration.
+    - Fully on-device AI — no internet required for chat
+    - Image understanding with MiniCPM-V model support
+    - Persistent memory across conversations
+    - Web search integration when online
+    - Multiple model support with local GGUF files

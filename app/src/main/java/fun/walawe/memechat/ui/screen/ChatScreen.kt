@@ -71,6 +71,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -376,6 +377,7 @@ private fun ChatScreenContent(
                 onToggleThinking = onToggleThinking,
                 webSearchMode = webSearchMode,
                 onToggleWebSearchMode = onToggleWebSearchMode,
+                isProcessing = uiState.isProcessing,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -643,6 +645,7 @@ private fun InputBar(
     onToggleThinking: () -> Unit,
     webSearchMode: WebSearchMode = WebSearchMode.None,
     onToggleWebSearchMode: () -> Unit = {},
+    isProcessing: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var showAttachMenu by remember { mutableStateOf(false) }
@@ -685,6 +688,27 @@ private fun InputBar(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            if (isProcessing) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "Still loading",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             BasicTextField(
@@ -804,18 +828,29 @@ private fun InputBar(
                     )
                 }
 
+                val sendContainerColor = if (isProcessing) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                } else if (inputText.text.isNotEmpty()) {
+                    MaterialTheme.colorScheme.primaryFixed
+                } else MaterialTheme.colorScheme.secondaryFixedDim
+
+                val sendIconTint = if (isProcessing) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                } else if (inputText.text.isNotEmpty()) {
+                    MaterialTheme.colorScheme.onPrimaryFixed
+                } else MaterialTheme.colorScheme.onSecondaryFixed
+
                 FloatingActionButton(
-                    onClick = onSend,
-                    containerColor = if (inputText.text.isNotEmpty()) {
-                        MaterialTheme.colorScheme.primaryFixed
-                    } else MaterialTheme.colorScheme.secondaryFixedDim,
+                    onClick = { if (!isProcessing) onSend() },
+                    containerColor = sendContainerColor,
                     modifier = Modifier.size(36.dp),
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
                         contentDescription = "Send",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
+                        tint = sendIconTint,
                     )
                 }
             }
