@@ -167,6 +167,8 @@ NDK_PATH=/home/dani/Android/Sdk/ndk/27.2.12479018
 
 ```
 
+> **Vulkan is disabled by default.** Enabling GPU acceleration (Vulkan) requires significant work beyond flipping a flag — Mali-G57 and similar GPUs crash in `ggml_backend_alloc_ctx_tensors_from_buft` due to q6_K tensor incompatibility with `Vulkan_Host` buffers, and Android blocks SIGSEGV handlers (API 27+) making graceful fallback impossible. The engine runs on CPU with KleidiAI NEON kernels and OpenMP threading.
+
 If you find following error about Vulkan SDK missing
 ```
 cp vulkan.hpp \

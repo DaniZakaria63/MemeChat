@@ -16,6 +16,17 @@ if(NOT EXISTS "${LLAMA_DIR}/CMakeLists.txt")
 endif()
 
 # ---------------------------------------------------------------------------
+# ARM architecture flags — enable SDOT (dot-product) instructions
+# The Helio G99 and most modern ARM chips support armv8.2-a + dotprod.
+# This compiles Q4_K_M quantized matmul kernels with SDOT instructions
+# for ~1.5-2x speedup on quantized layers.
+# ---------------------------------------------------------------------------
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -march=armv8.2-a+dotprod")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+dotprod")
+endif()
+
+# ---------------------------------------------------------------------------
 # Android ABI guard — only arm64-v8a is supported
 # ---------------------------------------------------------------------------
 if(DEFINED ANDROID_ABI)
@@ -31,11 +42,12 @@ endif()
 # ggml / llama backend flags
 # ---------------------------------------------------------------------------
 set(GGML_CPU                ON  CACHE BOOL "Enable CPU backend"            FORCE)
-set(GGML_VULKAN             OFF  CACHE BOOL "Enable Vulkan backend"         FORCE)
-set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
-set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
 set(GGML_CPU_KLEIDIAI       ON  CACHE BOOL "KleidiAI NEON kernels"         FORCE)
 set(GGML_OPENMP             ON  CACHE BOOL "OpenMP threading"              FORCE)
+set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
+set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
+
+set(GGML_VULKAN              OFF CACHE BOOL "Enable Vulkan backend"         FORCE)
 set(LLAMA_BUILD_SHARED      OFF CACHE BOOL "Build llama as static lib"     FORCE)
 set(LLAMA_BUILD_MTMD        OFF CACHE BOOL "Do not build mtmd standalone"  FORCE)
 set(LLAMA_BUILD_COMMON      OFF CACHE BOOL "Skip common library"           FORCE)

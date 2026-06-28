@@ -18,7 +18,7 @@ struct TokenCallback {
 class LLMInference {
 public:
     bool init(const char* modelPath, const char* mmprojPath,
-              const char* backendPath, int contextSize, bool useVulkan);
+              const char* backendPath, int contextSize);
 
     std::string processConversation(const char* chatML, const TokenCallback* cb = nullptr);
     std::string processImageAndText(JNIEnv* env, jobject bitmap, const char* prompt,
