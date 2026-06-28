@@ -16,6 +16,17 @@ if(NOT EXISTS "${LLAMA_DIR}/CMakeLists.txt")
 endif()
 
 # ---------------------------------------------------------------------------
+# ARM architecture flags — enable SDOT (dot-product) instructions
+# The Helio G99 and most modern ARM chips support armv8.2-a + dotprod.
+# This compiles Q4_K_M quantized matmul kernels with SDOT instructions
+# for ~1.5-2x speedup on quantized layers.
+# ---------------------------------------------------------------------------
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -march=armv8.2-a+dotprod")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+dotprod")
+endif()
+
+# ---------------------------------------------------------------------------
 # Android ABI guard — only arm64-v8a is supported
 # ---------------------------------------------------------------------------
 if(DEFINED ANDROID_ABI)
@@ -36,7 +47,7 @@ set(GGML_OPENMP             ON  CACHE BOOL "OpenMP threading"              FORCE
 set(GGML_BACKEND_DL         OFF CACHE BOOL "Statically link backends"      FORCE)
 set(GGML_CPU_ALL_VARIANTS   OFF CACHE BOOL "Disable multi-variant CPU builds" FORCE)
 
-set(GGML_VULKAN              ON  CACHE BOOL "Enable Vulkan backend")
+set(GGML_VULKAN              OFF CACHE BOOL "Enable Vulkan backend"         FORCE)
 set(LLAMA_BUILD_SHARED      OFF CACHE BOOL "Build llama as static lib"     FORCE)
 set(LLAMA_BUILD_MTMD        OFF CACHE BOOL "Do not build mtmd standalone"  FORCE)
 set(LLAMA_BUILD_COMMON      OFF CACHE BOOL "Skip common library"           FORCE)
@@ -87,7 +98,6 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         memelm.cpp
         LLMInference.cpp
         EmbeddingEngine.cpp
-        BackendProber.cpp
         ${MTMD_SOURCES}
 )
 
@@ -110,9 +120,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # ---------------------------------------------------------------------------
 # System libraries
 # ---------------------------------------------------------------------------
-if(GGML_VULKAN)
-    find_library(vulkan-lib vulkan REQUIRED)
-endif()
+find_library(vulkan-lib    vulkan    REQUIRED)
 find_library(jnigraphics-lib jnigraphics REQUIRED)
 find_library(log-lib       log       REQUIRED)
 find_library(android-lib   android   REQUIRED)
@@ -123,11 +131,8 @@ find_library(android-lib   android   REQUIRED)
 # ---------------------------------------------------------------------------
 target_link_libraries(${CMAKE_PROJECT_NAME}
         -Wl,--whole-archive llama -Wl,--no-whole-archive
+        ${vulkan-lib}
         ${jnigraphics-lib}
         ${android-lib}
         ${log-lib}
 )
-
-if(GGML_VULKAN AND vulkan-lib)
-    target_link_libraries(${CMAKE_PROJECT_NAME} ${vulkan-lib})
-endif()
