@@ -63,10 +63,7 @@ class InferenceEngineImpl private constructor(
         mmprojPath: String,
         backendPath: String,
         contextSize: Int,
-        useVulkan: Boolean
     ): Boolean
-
-    external fun nativeProbeBackends(): String
 
     @FastNative
     external fun nativeSetSystemPrompt(prompt: String)
@@ -153,7 +150,6 @@ class InferenceEngineImpl private constructor(
                     mmprojPath = pathToMMProj,
                     backendPath = nativeLibDir,
                     contextSize = params.contextSize.orZero().toInt(),
-                    useVulkan = params.useVulkanBackend.orFalse()
                 ).let { result ->
                     _state.value = if (result) {
                         InferenceEngine.State.ModelReady
