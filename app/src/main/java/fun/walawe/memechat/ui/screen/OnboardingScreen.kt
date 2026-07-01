@@ -130,12 +130,13 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "MemeChat",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
+        Text(
+            text = "MemeChat",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
             }
 
             HorizontalPager(
@@ -253,6 +254,7 @@ private fun OnboardingSlide(
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
         Text(
@@ -286,6 +288,7 @@ private fun CheckSlide(
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -350,16 +353,18 @@ private fun CheckCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
                     )
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 when (result) {
@@ -403,6 +408,7 @@ private fun CheckCard(
                     text = result.message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
@@ -453,16 +459,18 @@ private fun SpeedCard(speedCheck: SpeedResult) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Connection Speed",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
                     )
                     Text(
                         text = "Testing download speed",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 when (speedCheck) {
@@ -522,6 +530,7 @@ private fun SpeedCard(speedCheck: SpeedResult) {
                     text = statusText,
                     style = MaterialTheme.typography.bodySmall,
                     color = borderColor,
+                    textAlign = TextAlign.Center,
                 )
             }
         }

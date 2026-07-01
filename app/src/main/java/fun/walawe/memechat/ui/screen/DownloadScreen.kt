@@ -30,6 +30,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -46,6 +49,8 @@ import `fun`.walawe.memechat.presenter.DownloadViewModel
 import java.util.Locale
 import kotlinx.coroutines.delay
 
+private val SuccessGreen = Color(0xFF4CAF50)
+
 @Composable
 fun DownloadScreen(
     viewModel: DownloadViewModel = hiltViewModel(),
@@ -57,7 +62,9 @@ fun DownloadScreen(
         DownloadStatus.Completed -> DownloadState.SUCCESS
         DownloadStatus.Downloading,
         DownloadStatus.Idle -> DownloadState.LOADING
-        else -> DownloadStatus.Error
+        DownloadStatus.InsufficientStorage,
+        DownloadStatus.InsufficientRam -> DownloadState.ERROR
+        DownloadStatus.Error -> DownloadState.ERROR
     }
 
     LaunchedEffect(currentState) {
@@ -75,14 +82,15 @@ fun DownloadScreen(
         when (state) {
             DownloadState.SUCCESS -> DownloadLoadingScreen(isComplete = true, uiState = uiState)
             DownloadState.ERROR -> DownloadErrorScreen(
-                message = uiState.errorMessage.orEmpty().ifEmpty { "Please retry." },
+                message = uiState.errorMessage.orEmpty()
+                    .ifEmpty { uiState.compatibilityMessage.orEmpty() }
+                    .ifEmpty { "Please retry." },
                 onRetry = viewModel::retryDownload
             )
             else -> DownloadLoadingScreen(isComplete = false, uiState = uiState)
         }
     }
 }
-
 
 @Composable
 private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState) {
@@ -92,6 +100,8 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
         composition,
         iterations = if (isComplete) 1 else Int.MAX_VALUE
     )
+
+    val tintColor = if (isComplete) SuccessGreen else MaterialTheme.colorScheme.primary
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -107,13 +117,18 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
             LottieAnimation(
                 composition = composition,
                 progress = { progress },
-                modifier = Modifier.size(160.dp)
+                modifier = Modifier
+                    .size(160.dp)
+                    .graphicsLayer {
+                        colorFilter = ColorFilter.tint(tintColor)
+                    },
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = if (isComplete) "Download Complete" else "Downloading AI Model",
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
             )
             if (!isComplete) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -128,7 +143,8 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
                     Text(
                         text = uiState.fileName.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 if (uiState.fileCount > 0 && uiState.fileIndex > 0) {
@@ -136,7 +152,8 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
                     Text(
                         text = "File ${uiState.fileIndex} of ${uiState.fileCount}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -144,13 +161,15 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
                     Text(
                         text = "${formatBytes(uiState.bytesDownloaded)} / ${formatBytes(uiState.totalBytes)} (${uiState.progressPercent}%)",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 } else if (uiState.bytesDownloaded > 0L) {
                     Text(
                         text = "${formatBytes(uiState.bytesDownloaded)} downloaded",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 Spacer(modifier = Modifier.height(32.dp))
@@ -165,7 +184,6 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
         }
     }
 }
-
 
 @Composable
 private fun DownloadErrorScreen(
@@ -193,7 +211,8 @@ private fun DownloadErrorScreen(
             Text(
                 text = "Download Failed",
                 style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -221,7 +240,6 @@ private fun DownloadErrorScreen(
     }
 }
 
-
 private enum class DownloadState { LOADING, ERROR, SUCCESS }
 
 private fun formatBytes(bytes: Long): String {
@@ -238,7 +256,7 @@ private fun formatBytes(bytes: Long): String {
 
 @Preview
 @Composable
-fun PreviewDownloadErrorScreen(){
+fun PreviewDownloadErrorScreen() {
     DownloadErrorScreen("IllegalArgument") {
 
     }
@@ -246,12 +264,12 @@ fun PreviewDownloadErrorScreen(){
 
 @Preview
 @Composable
-fun PreviewDownloadLoadingScreen(){
+fun PreviewDownloadLoadingScreen() {
     DownloadLoadingScreen(isComplete = false, uiState = DownloadUiState())
 }
 
 @Preview
 @Composable
-fun PreviewDownloadCompleteScreen(){
+fun PreviewDownloadCompleteScreen() {
     DownloadLoadingScreen(isComplete = true, uiState = DownloadUiState())
 }
