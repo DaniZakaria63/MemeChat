@@ -39,10 +39,9 @@
         </provider>
 
         <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:name=".service.ModelDownloadService"
             android:foregroundServiceType="dataSync"
-            android:exported="false"
-            tools:node="merge" />
+            android:exported="false" />
     </application>
 
 </manifest>
