@@ -5,6 +5,7 @@ richtext = "1.0.0-alpha04"
 guava = "33.6.0-android"
 kotlin = "2.3.20"
 kotlinxSerialization = "1.8.1"
+jspeedtest = "1.32.1"
 coreKtx = "1.18.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -102,6 +103,8 @@ androidx-work-hilt = { module = "androidx.hilt:hilt-work", version.ref = "hiltWo
 androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltWork" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltCompose" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+jspeedtest = { module = "fr.bmartel:jspeedtest", version.ref = "jspeedtest" }
+timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
 
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
@@ -112,11 +115,6 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 androidx-test-runner = { group = "androidx.test", name = "runner", version = "1.6.2" }
 mockk = { module = "io.mockk:mockk", version = "1.14.9"}
 jetbrains-coroutine-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutine" }
-timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
-litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litertGpu" }
-androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

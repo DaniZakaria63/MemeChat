@@ -87,7 +87,35 @@ data class SettingsUiState(
 )
 
 sealed class Screen(val route: String) {
+    object Onboarding : Screen("onboarding")
     object Download : Screen("download")
     object Chat : Screen("chat")
     object Settings : Screen("settings")
 }
+
+sealed interface OnboardingCheckResult {
+    data object Pending : OnboardingCheckResult
+    data object Running : OnboardingCheckResult
+    data class Passed(val message: String) : OnboardingCheckResult
+    data class Failed(val message: String) : OnboardingCheckResult
+}
+
+sealed interface SpeedResult {
+    data object NotChecked : SpeedResult
+    data object Checking : SpeedResult
+    data object Good : SpeedResult
+    data object Okay : SpeedResult
+    data object Weak : SpeedResult
+    data object Unknown : SpeedResult
+}
+
+data class OnboardingState(
+    val currentPage: Int = 0,
+    val storageCheck: OnboardingCheckResult = OnboardingCheckResult.Pending,
+    val ramCheck: OnboardingCheckResult = OnboardingCheckResult.Pending,
+    val speedCheck: SpeedResult = SpeedResult.NotChecked,
+    val onboardingCompleted: Boolean = false,
+)
+
+const val ONBOARDING_PREFS = "onboarding_prefs"
+const val ONBOARDING_COMPLETED_KEY = "onboarding_completed"

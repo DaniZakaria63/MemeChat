@@ -6,6 +6,9 @@ import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.BackoffPolicy
 import androidx.work.Configuration
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import com.google.firebase.analytics.FirebaseAnalytics
@@ -59,7 +62,11 @@ class MemeChatApp : Application(), Configuration.Provider{
     }
 
     fun initializeModelDownload() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
         val modelDownloadRequest = OneTimeWorkRequest.Builder(ModelDownloadWorker::class.java)
+            .setConstraints(constraints)
             .setBackoffCriteria(
                 backoffPolicy = BackoffPolicy.EXPONENTIAL,
                 backoffDelay = 10L,
@@ -69,7 +76,7 @@ class MemeChatApp : Application(), Configuration.Provider{
 
         WorkManager.getInstance(this).enqueueUniqueWork(
             uniqueWorkName = ModelDownloadWorker.WORK_TAG,
-            existingWorkPolicy = androidx.work.ExistingWorkPolicy.KEEP,
+            existingWorkPolicy = ExistingWorkPolicy.KEEP,
             request = modelDownloadRequest
         )
         Timber.d("Model download worker enqueued")

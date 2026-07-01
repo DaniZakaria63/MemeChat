@@ -1,7 +1,5 @@
 package `fun`.walawe.memechat
 
-import android.app.Activity
-import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,11 +14,14 @@ import `fun`.walawe.constant.MODEL_DIR_NAME
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_EMBEDDING
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
+import `fun`.walawe.memechat.model.ONBOARDING_COMPLETED_KEY
+import `fun`.walawe.memechat.model.ONBOARDING_PREFS
 import `fun`.walawe.memechat.model.Screen
 import `fun`.walawe.memechat.ui.screen.ChatScreen
-import `fun`.walawe.memechat.ui.screen.DownloadScreen
+import `fun`.walawe.memechat.ui.screen.OnboardingScreen
 import `fun`.walawe.memechat.ui.screen.SettingsScreen
 import `fun`.walawe.memechat.ui.theme.MemeChatAppTheme
+import `fun`.walawe.memechat.ui.screen.DownloadScreen
 import java.io.File
 
 @AndroidEntryPoint
@@ -29,12 +30,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val startDest = if (modelsExistOnDisk(this)) Screen.Chat.route else Screen.Download.route
-
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
+
+        val prefs = getSharedPreferences(ONBOARDING_PREFS, MODE_PRIVATE)
+        val onboardingCompleted = prefs.getBoolean(ONBOARDING_COMPLETED_KEY, false)
+        val modelsExist = modelsExistOnDisk()
+
+        val startDest = when {
+            !onboardingCompleted -> Screen.Onboarding.route
+            modelsExist -> Screen.Chat.route
+            else -> Screen.Download.route
+        }
+
         setContent{
             MemeChatAppTheme {
                 val navHostController = rememberNavController()
@@ -42,6 +52,13 @@ class MainActivity : ComponentActivity() {
                     navController = navHostController,
                     startDestination = startDest
                 ){
+                    composable(Screen.Onboarding.route) {
+                        OnboardingScreen {
+                            navHostController.navigate(Screen.Download.route) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
                     composable(Screen.Download.route) {
                         DownloadScreen {
                             navHostController.navigate(Screen.Chat.route) {
@@ -60,8 +77,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun modelsExistOnDisk(context: Context): Boolean {
-        val dir = context.getDir(MODEL_DIR_NAME, Context.MODE_PRIVATE)
+    private fun modelsExistOnDisk(): Boolean {
+        val dir = getDir(MODEL_DIR_NAME, MODE_PRIVATE)
         return listOf(
             MODEL_DISPLAYNAME_MINICPM_LLM,
             MODEL_DISPLAYNAME_MINICPM_MMPROJ,
