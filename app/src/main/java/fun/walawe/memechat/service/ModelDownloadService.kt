@@ -88,7 +88,22 @@ class ModelDownloadService : Service() {
             startForeground(NOTIFICATION_ID, initialNotification)
         }
 
-        scope.launch { downloadModels() }
+        scope.launch {
+            try {
+                downloadModels()
+            } catch (e: Exception) {
+                Timber.e(e, "Unexpected exception during download")
+                val errorNotification = notificationManager.buildErrorNotification(
+                    e.message ?: "Unexpected error during download"
+                )
+                systemNotificationManager.notify(ERROR_NOTIFICATION_ID, errorNotification)
+                DownloadServiceState.update {
+                    it.copy(status = DownloadStatus.Error, errorMessage = e.message ?: "Unexpected error")
+                }
+                stopForeground(STOP_FOREGROUND_DETACH)
+                stopSelf()
+            }
+        }
 
         return START_STICKY
     }
