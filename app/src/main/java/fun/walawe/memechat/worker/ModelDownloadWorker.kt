@@ -1,8 +1,15 @@
 package `fun`.walawe.memechat.worker
 
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
@@ -12,6 +19,9 @@ import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
 import `fun`.walawe.constant.ModelUrlProvider
 import `fun`.walawe.constant.orZero
+import `fun`.walawe.memechat.MainActivity
+import `fun`.walawe.memechat.MemeChatApp
+import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheKey
 import `fun`.walawe.modelpull.model.DownloadTarget
@@ -20,7 +30,6 @@ import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
 import `fun`.walawe.modelpull.service.ModelDownloader
 import timber.log.Timber
-import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
 import java.net.UnknownHostException
 
 @HiltWorker
@@ -31,7 +40,8 @@ class ModelDownloadWorker @AssistedInject constructor(
     private val modelCache: ModelCache,
     private val modelUrlProvider: ModelUrlProvider,
     private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
-): CoroutineWorker(appContext, workerParams){
+): CoroutineWorker(appContext, workerParams) {
+
     override suspend fun doWork(): Result {
         if (!deviceCompatibilityChecker.isStorageSufficient()) {
             Timber.w("Insufficient storage in worker — aborting download")
@@ -40,6 +50,10 @@ class ModelDownloadWorker @AssistedInject constructor(
                 ERROR_MESSAGE_KEY to ERROR_MSG_STORAGE,
             ))
         }
+
+        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        setForeground(createForegroundInfo("Preparing download...", 0, 0, 0, 0, ""))
+
         val targets = listOf(
             DownloadTarget(
                 uri = modelUrlProvider.getModelUrl(),
@@ -64,6 +78,16 @@ class ModelDownloadWorker @AssistedInject constructor(
         var lastProgressUpdateMs = 0L
         var lastReportedBytes = 0L
         val fileCount = targets.size
+
+        fun updateNotification(
+            fileName: String,
+            fileIndex: Int,
+            downloaded: Long,
+            total: Long,
+        ) {
+            val notification = createForegroundInfo(fileName, fileIndex, fileCount, downloaded, total, fileName)
+            notificationManager.notify(NOTIFICATION_ID, notification.notification)
+        }
 
         fun updateProgress(
             target: DownloadTarget,
@@ -93,6 +117,7 @@ class ModelDownloadWorker @AssistedInject constructor(
                     PROGRESS_TOTAL_BYTES to total
                 )
             )
+            updateNotification(target.fileName, fileIndex + 1, downloaded, total)
         }
 
         for ((index, target) in targets.withIndex()) {
@@ -153,6 +178,72 @@ class ModelDownloadWorker @AssistedInject constructor(
         return Result.success(workDataOf("info" to "Model downloaded successfully"))
     }
 
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return createForegroundInfo("", 0, 0, 0, 0, "")
+    }
+
+    private fun createForegroundInfo(
+        fileName: String,
+        fileIndex: Int,
+        fileCount: Int,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        notificationFileName: String,
+    ): ForegroundInfo {
+        val notification = buildNotification(fileName, fileIndex, fileCount, bytesDownloaded, totalBytes, notificationFileName)
+        return ForegroundInfo(NOTIFICATION_ID, notification)
+    }
+
+    private fun buildNotification(
+        fileName: String,
+        fileIndex: Int,
+        fileCount: Int,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        notificationFileName: String,
+    ): Notification {
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MemeChatApp.EXTRA_NAVIGATE_TO_DOWNLOAD, true)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val displayName = if (fileName.isNotBlank()) fileName else "Downloading AI Model"
+        val percentage = if (totalBytes > 0L) (bytesDownloaded * 100 / totalBytes).toInt() else 0
+        val fileInfo = if (fileCount > 0) "File $fileIndex of $fileCount" else "Preparing..."
+
+        val text = if (totalBytes > 0L) {
+            "$fileInfo · $percentage% · $displayName"
+        } else {
+            "$fileInfo · $displayName"
+        }
+
+        return NotificationCompat.Builder(applicationContext, MemeChatApp.DOWNLOAD_CHANNEL_ID)
+            .setContentTitle("Downloading AI Model")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setColor(Color.parseColor(NOTIFICATION_COLOR))
+            .setColorized(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .apply {
+                if (totalBytes > 0L) {
+                    setProgress(totalBytes.toInt(), bytesDownloaded.toInt(), false)
+                } else {
+                    setProgress(0, 0, true)
+                }
+            }
+            .build()
+    }
+
     companion object {
         private val TAG = ModelDownloadWorker::class.simpleName
         private val MAX_RETRIES = 3
@@ -169,6 +260,8 @@ class ModelDownloadWorker @AssistedInject constructor(
         const val PROGRESS_FILE_COUNT = "progress_file_count"
         private const val PROGRESS_THROTTLE_MS = 200L
         private const val MIN_PROGRESS_BYTES = 64 * 1024L
+        const val NOTIFICATION_ID = MemeChatApp.NOTIFICATION_ID
+        private const val NOTIFICATION_COLOR = "#00685E"
 
         // Test Only
         const val TEST_MODEL_URI = "http://192.168.0.103:39983/dummy.txt"

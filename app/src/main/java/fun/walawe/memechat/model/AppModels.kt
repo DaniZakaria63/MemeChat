@@ -117,5 +117,3 @@ data class OnboardingState(
     val onboardingCompleted: Boolean = false,
 )
 
-const val ONBOARDING_PREFS = "onboarding_prefs"
-const val ONBOARDING_COMPLETED_KEY = "onboarding_completed"

@@ -1,6 +1,9 @@
 package `fun`.walawe.memechat
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
@@ -58,7 +61,25 @@ class MemeChatApp : Application(), Configuration.Provider{
             modelUrlProvider.fetch()
         }
 
+        createNotificationChannel()
         initializeModelDownload()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                DOWNLOAD_CHANNEL_ID,
+                "Model Download",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Progress of AI model downloads"
+                setShowBadge(false)
+                enableVibration(false)
+                setSound(null, null)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
     }
 
     fun initializeModelDownload() {
@@ -82,4 +103,9 @@ class MemeChatApp : Application(), Configuration.Provider{
         Timber.d("Model download worker enqueued")
     }
 
+    companion object {
+        const val DOWNLOAD_CHANNEL_ID = "download_progress"
+        const val NOTIFICATION_ID = 1001
+        const val EXTRA_NAVIGATE_TO_DOWNLOAD = "navigate_to_download"
+    }
 }

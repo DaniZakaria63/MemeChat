@@ -11,13 +11,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
 import `fun`.walawe.constant.MODEL_DIR_NAME
-import `fun`.walawe.memechat.data.UserPreferences
-import javax.inject.Inject
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_EMBEDDING
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
-import `fun`.walawe.memechat.model.ONBOARDING_COMPLETED_KEY
-import `fun`.walawe.memechat.model.ONBOARDING_PREFS
+import `fun`.walawe.memechat.data.UserPreferences
 import `fun`.walawe.memechat.model.Screen
 import `fun`.walawe.memechat.ui.screen.ChatScreen
 import `fun`.walawe.memechat.ui.screen.OnboardingScreen
@@ -25,6 +22,7 @@ import `fun`.walawe.memechat.ui.screen.SettingsScreen
 import `fun`.walawe.memechat.ui.theme.MemeChatAppTheme
 import `fun`.walawe.memechat.ui.screen.DownloadScreen
 import java.io.File
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -42,20 +40,22 @@ class MainActivity : ComponentActivity() {
 
         val onboardingCompleted = userPreferences.isOnboardingCompleted()
         val modelsExist = modelsExistOnDisk()
+        val navigateToDownload = intent.getBooleanExtra(MemeChatApp.EXTRA_NAVIGATE_TO_DOWNLOAD, false)
 
         val startDest = when {
+            navigateToDownload -> Screen.Download.route
             !onboardingCompleted -> Screen.Onboarding.route
             modelsExist -> Screen.Chat.route
             else -> Screen.Download.route
         }
 
-        setContent{
+        setContent {
             MemeChatAppTheme {
                 val navHostController = rememberNavController()
                 NavHost(
                     navController = navHostController,
                     startDestination = startDest
-                ){
+                ) {
                     composable(Screen.Onboarding.route) {
                         OnboardingScreen {
                             navHostController.navigate(Screen.Download.route) {
@@ -89,5 +89,4 @@ class MainActivity : ComponentActivity() {
             MODEL_DISPLAYNAME_EMBEDDING,
         ).all { File(dir, "$it.done").exists() }
     }
-
 }
