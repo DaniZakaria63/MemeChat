@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -58,7 +59,9 @@ class MemeChatApp : Application(), Configuration.Provider{
         }
 
         applicationScope.launch(rcExceptionHandler) {
-            modelUrlProvider.fetch()
+            withTimeout(15_000L) {
+                modelUrlProvider.fetch()
+            }
         }
 
         createNotificationChannel()
@@ -90,7 +93,7 @@ class MemeChatApp : Application(), Configuration.Provider{
             .setConstraints(constraints)
             .setBackoffCriteria(
                 backoffPolicy = BackoffPolicy.EXPONENTIAL,
-                backoffDelay = 10L,
+                backoffDelay = 30L,
                 timeUnit = TimeUnit.SECONDS
             )
             .build()
