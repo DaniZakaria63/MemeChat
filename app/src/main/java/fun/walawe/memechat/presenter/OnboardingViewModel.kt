@@ -1,40 +1,36 @@
 package `fun`.walawe.memechat.presenter
 
-import android.content.Context
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.memechat.analyzer.CompatibilityResult
 import `fun`.walawe.memechat.analyzer.ConnectionSpeedChecker
 import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
-import `fun`.walawe.memechat.model.ONBOARDING_COMPLETED_KEY
-import `fun`.walawe.memechat.model.ONBOARDING_PREFS
+import `fun`.walawe.memechat.data.UserPreferences
 import `fun`.walawe.memechat.model.OnboardingCheckResult
 import `fun`.walawe.memechat.model.OnboardingState
 import `fun`.walawe.memechat.model.SpeedResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
     private val connectionSpeedChecker: ConnectionSpeedChecker,
+    private val userPreferences: UserPreferences,
 ) : BaseViewModel() {
 
     private val _state = MutableStateFlow(OnboardingState())
     val state = _state.asStateFlow()
 
-    private val prefs = context.getSharedPreferences(ONBOARDING_PREFS, Context.MODE_PRIVATE)
-
     init {
-        val completed = prefs.getBoolean(ONBOARDING_COMPLETED_KEY, false)
-        if (completed) {
+        if (userPreferences.isOnboardingCompleted()) {
             _state.update { it.copy(onboardingCompleted = true) }
         }
     }
@@ -56,16 +52,12 @@ class OnboardingViewModel @Inject constructor(
         }
     }
 
-    fun skipOnboarding() {
-        completeOnboarding()
-    }
-
     fun getStarted() {
         completeOnboarding()
     }
 
     private fun completeOnboarding() {
-        prefs.edit().putBoolean(ONBOARDING_COMPLETED_KEY, true).apply()
+        userPreferences.setOnboardingCompleted(true)
         _state.update { it.copy(onboardingCompleted = true) }
     }
 
@@ -86,7 +78,7 @@ class OnboardingViewModel @Inject constructor(
             is CompatibilityResult.InsufficientRam,
             is CompatibilityResult.InsufficientFreeRam -> {
                 _state.update {
-                    it.copy(storageCheck = OnboardingCheckResult.Passed("Storage is sufficient ✓"))
+                    it.copy(storageCheck = OnboardingCheckResult.Passed("Storage is sufficient"))
                 }
             }
             is CompatibilityResult.InsufficientStorage -> {
@@ -106,11 +98,6 @@ class OnboardingViewModel @Inject constructor(
         delay(500)
         val result = deviceCompatibilityChecker.checkFreeRam()
         when (result) {
-            is CompatibilityResult.Ok -> {
-                _state.update {
-                    it.copy(ramCheck = OnboardingCheckResult.Passed("Free RAM is sufficient ✓"))
-                }
-            }
             is CompatibilityResult.InsufficientFreeRam -> {
                 _state.update {
                     it.copy(ramCheck = OnboardingCheckResult.Failed(result.message))
@@ -119,7 +106,7 @@ class OnboardingViewModel @Inject constructor(
             }
             else -> {
                 _state.update {
-                    it.copy(ramCheck = OnboardingCheckResult.Passed("Free RAM is sufficient ✓"))
+                    it.copy(ramCheck = OnboardingCheckResult.Passed("Free RAM is sufficient"))
                 }
             }
         }
@@ -130,7 +117,9 @@ class OnboardingViewModel @Inject constructor(
         if (!ramPassed) return
 
         _state.update { it.copy(speedCheck = SpeedResult.Checking) }
-        val result = connectionSpeedChecker.measureSpeed()
+        val result = withContext(Dispatchers.IO) {
+            connectionSpeedChecker.measureSpeed()
+        }
         _state.update { it.copy(speedCheck = result) }
     }
 

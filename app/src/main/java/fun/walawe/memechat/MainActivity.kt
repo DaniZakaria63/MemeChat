@@ -11,6 +11,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
 import `fun`.walawe.constant.MODEL_DIR_NAME
+import `fun`.walawe.memechat.data.UserPreferences
+import javax.inject.Inject
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_EMBEDDING
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
@@ -27,6 +29,9 @@ import java.io.File
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject
+    lateinit var userPreferences: UserPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -35,8 +40,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
 
-        val prefs = getSharedPreferences(ONBOARDING_PREFS, MODE_PRIVATE)
-        val onboardingCompleted = prefs.getBoolean(ONBOARDING_COMPLETED_KEY, false)
+        val onboardingCompleted = userPreferences.isOnboardingCompleted()
         val modelsExist = modelsExistOnDisk()
 
         val startDest = when {
