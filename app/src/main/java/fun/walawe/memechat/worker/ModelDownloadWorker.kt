@@ -20,7 +20,7 @@ import `fun`.walawe.modelpull.model.ModelCache
 import `fun`.walawe.modelpull.model.NotFoundException
 import `fun`.walawe.modelpull.service.ModelDownloader
 import timber.log.Timber
-import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
+import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
 import java.net.UnknownHostException
 
 @HiltWorker
@@ -36,8 +36,8 @@ class ModelDownloadWorker @AssistedInject constructor(
         if (!deviceCompatibilityChecker.isStorageSufficient()) {
             Timber.w("Insufficient storage in worker — aborting download")
             return Result.failure(workDataOf(
-                "error_type" to "InsufficientStorage",
-                "error_message" to "Not enough free storage space. Please free up space and try again."
+                ERROR_TYPE_KEY to ERROR_INSUFFICIENT_STORAGE,
+                ERROR_MESSAGE_KEY to ERROR_MSG_STORAGE,
             ))
         }
         val targets = listOf(
@@ -117,24 +117,24 @@ class ModelDownloadWorker @AssistedInject constructor(
                 }
 
                 return Result.failure(workDataOf(
-                    "error_type" to error::class.simpleName,
-                    "error_message" to error.message,
+                    ERROR_TYPE_KEY to error::class.simpleName,
+                    ERROR_MESSAGE_KEY to error.message,
                     PROGRESS_FILE_NAME to target.fileName,
                     PROGRESS_FILE_URI to target.uri
                 ))
             }
 
             val cacheModel = downloadResult.getOrNull() ?: return Result.failure(workDataOf(
-                "error_type" to IllegalURILinkIdException::class.simpleName,
-                "error_message" to "Invalid model URI or link ID",
+                ERROR_TYPE_KEY to IllegalURILinkIdException::class.simpleName,
+                ERROR_MESSAGE_KEY to "Invalid model URI or link ID",
                 PROGRESS_FILE_NAME to target.fileName,
                 PROGRESS_FILE_URI to target.uri
             ))
 
             if (cacheModel.localFileName.isBlank()) {
                 return Result.failure(workDataOf(
-                    "error_type" to IllegalURILinkIdException::class.simpleName,
-                    "error_message" to "Invalid model URI or link ID",
+                    ERROR_TYPE_KEY to IllegalURILinkIdException::class.simpleName,
+                    ERROR_MESSAGE_KEY to "Invalid model URI or link ID",
                     PROGRESS_FILE_NAME to target.fileName,
                     PROGRESS_FILE_URI to target.uri
                 ))
@@ -157,6 +157,10 @@ class ModelDownloadWorker @AssistedInject constructor(
         private val TAG = ModelDownloadWorker::class.simpleName
         private val MAX_RETRIES = 3
         const val WORK_TAG = "model_download"
+        const val ERROR_TYPE_KEY = "error_type"
+        const val ERROR_MESSAGE_KEY = "error_message"
+        const val ERROR_INSUFFICIENT_STORAGE = "InsufficientStorage"
+        const val ERROR_MSG_STORAGE = "Not enough free storage space. Please free up space and try again."
         const val PROGRESS_BYTES = "progress_bytes"
         const val PROGRESS_TOTAL_BYTES = "progress_total_bytes"
         const val PROGRESS_FILE_NAME = "progress_file_name"

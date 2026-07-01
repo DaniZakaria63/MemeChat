@@ -1,4 +1,4 @@
-package `fun`.walawe.memechat.compat
+package `fun`.walawe.memechat.analyzer
 
 import android.app.ActivityManager
 import android.content.Context
@@ -14,6 +14,7 @@ class DeviceCompatibilityChecker @Inject constructor(
 
     private val requiredStorageBytes = 2L * 1024 * 1024 * 1024
     private val requiredTotalRamBytes = 4L * 1024 * 1024 * 1024
+    private val requiredFreeRamBytes = 1L * 1024 * 1024 * 1024
 
     fun runChecks(): CompatibilityResult {
         return when (val storage = checkStorage()) {
@@ -36,6 +37,26 @@ class DeviceCompatibilityChecker @Inject constructor(
 
     fun isStorageSufficient(): Boolean {
         return checkStorage() is StorageResult.Ok
+    }
+
+    fun checkFreeRam(): CompatibilityResult {
+        try {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return CompatibilityResult.Ok
+            val memoryInfo = ActivityManager.MemoryInfo()
+            activityManager.getMemoryInfo(memoryInfo)
+            return if (memoryInfo.availMem < requiredFreeRamBytes) {
+                CompatibilityResult.InsufficientFreeRam(
+                    availMemBytes = memoryInfo.availMem,
+                    requiredBytes = requiredFreeRamBytes,
+                    message = "Need ${formatBytes(requiredFreeRamBytes)} free RAM, only ${formatBytes(memoryInfo.availMem)} available."
+                )
+            } else {
+                CompatibilityResult.Ok
+            }
+        } catch (e: Exception) {
+            return CompatibilityResult.Ok
+        }
     }
 
     private fun checkStorage(): StorageResult {
@@ -95,6 +116,11 @@ sealed interface CompatibilityResult {
     ) : CompatibilityResult
     data class InsufficientRam(
         val totalRamBytes: Long,
+        val message: String,
+    ) : CompatibilityResult
+    data class InsufficientFreeRam(
+        val availMemBytes: Long,
+        val requiredBytes: Long,
         val message: String,
     ) : CompatibilityResult
 }
