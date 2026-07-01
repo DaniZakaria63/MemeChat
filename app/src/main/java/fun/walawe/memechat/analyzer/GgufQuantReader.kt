@@ -1,4 +1,4 @@
-package `fun`.walawe.memechat.gguf
+package `fun`.walawe.memechat.analyzer
 
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer

@@ -1,15 +1,16 @@
 package `fun`.walawe.memechat.presenter
 
-import android.content.Context
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.memechat.model.DownloadStatus
 import `fun`.walawe.memechat.model.DownloadUiState
 import `fun`.walawe.memechat.worker.ModelDownloadWorker
@@ -17,55 +18,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import `fun`.walawe.memechat.compat.CompatibilityResult
-import `fun`.walawe.memechat.compat.DeviceCompatibilityChecker
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
 class DownloadViewModel @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
-) : ViewModel() {
+    application: Application,
+) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(DownloadUiState())
     val uiState = _uiState.asStateFlow()
 
     init {
-        checkCompatibility()
-    }
-
-    private fun checkCompatibility() {
-        when (val result = deviceCompatibilityChecker.runChecks()) {
-            is CompatibilityResult.InsufficientStorage -> {
-                _uiState.update {
-                    it.copy(
-                        status = DownloadStatus.InsufficientStorage,
-                        compatibilityMessage = result.message,
-                    )
-                }
-            }
-            is CompatibilityResult.InsufficientRam -> {
-                _uiState.update {
-                    it.copy(
-                        status = DownloadStatus.InsufficientRam,
-                        compatibilityMessage = result.message,
-                    )
-                }
-            }
-            is CompatibilityResult.Ok -> {
-                observeWorker()
-            }
-        }
-    }
-
-    private fun observeWorker() {
         viewModelScope.launch {
-            WorkManager.getInstance(context)
+            WorkManager.getInstance(getApplication())
                 .getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.WORK_TAG)
-                .collect { infos ->
-                    val info = infos.firstOrNull()
-                    updateFromWorkInfo(info)
-                }
+                .collect { updateFromWorkInfo(it.firstOrNull()) }
         }
     }
 
@@ -131,7 +98,12 @@ class DownloadViewModel @Inject constructor(
     }
 
     fun retryDownload() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val request = OneTimeWorkRequest.Builder(ModelDownloadWorker::class.java)
+            .setConstraints(constraints)
             .setBackoffCriteria(
                 backoffPolicy = BackoffPolicy.EXPONENTIAL,
                 backoffDelay = 10L,
@@ -139,7 +111,7 @@ class DownloadViewModel @Inject constructor(
             )
             .build()
 
-        WorkManager.getInstance(context).enqueueUniqueWork(
+        WorkManager.getInstance(getApplication()).enqueueUniqueWork(
             ModelDownloadWorker.WORK_TAG,
             ExistingWorkPolicy.REPLACE,
             request,
