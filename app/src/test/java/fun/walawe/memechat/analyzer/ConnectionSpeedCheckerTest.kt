@@ -13,13 +13,18 @@ import java.net.URI
 class ConnectionSpeedCheckerTest {
 
     @Test
-    fun `production URL should be well-formed HTTP ISO link`() {
-        val url = "http://ipv4.ikoula.testdebit.info/5M.iso"
-
-        assertTrue("URL must start with http", url.startsWith("http://") || url.startsWith("https://"))
-        assertTrue("URL must have a valid hostname", url.contains("."))
-        assertTrue("URL must end with .iso", url.endsWith(".iso"))
-        assertNotNull("URL must be parseable", URI(url))
+    fun `at least one fallback URL should be well-formed`() {
+        val urls = listOf(
+            "http://speedtest.tele2.net/5MB.zip",
+            "http://speedtest.reliableservers.com/100MBtest.bin",
+            "https://speed.cloudflare.com/__down?bytes=5000000",
+        )
+        assertTrue("Must have at least one fallback URL", urls.isNotEmpty())
+        for (url in urls) {
+            assertTrue("URL must start with http(s): $url", url.startsWith("http://") || url.startsWith("https://"))
+            assertTrue("URL must have a valid hostname: $url", url.contains("."))
+            assertNotNull("URL must be parseable: $url", URI(url))
+        }
     }
 
     @Test(timeout = 45_000)

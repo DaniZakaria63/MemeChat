@@ -27,10 +27,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,6 +53,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +65,9 @@ import `fun`.walawe.memechat.model.OnboardingCheckResult
 import `fun`.walawe.memechat.model.SpeedResult
 import `fun`.walawe.memechat.presenter.OnboardingViewModel
 import kotlinx.coroutines.delay
+
+private val SuccessGreen = Color(0xFF4CAF50)
+private val WarningYellow = Color(0xFFFFC107)
 
 @Composable
 fun OnboardingScreen(
@@ -138,12 +145,12 @@ fun OnboardingScreen(
             ) { page ->
                 when (page) {
                     0 -> OnboardingSlide(
-                        icon = "🤖",
+                        icon = Icons.Default.Psychology,
                         title = "Private AI",
                         description = "All AI processing happens entirely on your device. Your data never leaves your phone — no cloud, no servers, complete privacy.",
                     )
                     1 -> OnboardingSlide(
-                        icon = "✨",
+                        icon = Icons.Default.AutoAwesome,
                         title = "Smart & Capable",
                         description = "Chat about images, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.",
                     )
@@ -178,21 +185,6 @@ fun OnboardingScreen(
                 ) {
                     repeat(3) { index ->
                         val isSelected = pagerState.currentPage == index
-                        Box(
-                            modifier = Modifier
-                                .size(if (isSelected) 10.dp else 8.dp)
-                                .let { mod ->
-                                    mod.then(
-                                        if (isSelected) {
-                                            Modifier
-                                                .width(24.dp)
-                                                .height(8.dp)
-                                        } else {
-                                            Modifier.size(8.dp)
-                                        }
-                                    )
-                                }
-                        )
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = if (isSelected)
@@ -240,7 +232,7 @@ fun OnboardingScreen(
 
 @Composable
 private fun OnboardingSlide(
-    icon: String,
+    icon: ImageVector,
     title: String,
     description: String,
 ) {
@@ -249,9 +241,11 @@ private fun OnboardingSlide(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = icon,
-            style = MaterialTheme.typography.displayLarge,
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(24.dp))
         Text(
@@ -331,11 +325,11 @@ private fun CheckCard(
     description: String,
     result: OnboardingCheckResult,
     actionLabel: String,
-    actionIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    actionIcon: ImageVector,
     onAction: () -> Unit,
 ) {
     val borderColor = when (result) {
-        is OnboardingCheckResult.Passed -> MaterialTheme.colorScheme.primary
+        is OnboardingCheckResult.Passed -> SuccessGreen
         is OnboardingCheckResult.Failed -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.outlineVariant
     }
@@ -388,7 +382,7 @@ private fun CheckCard(
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = SuccessGreen,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -429,8 +423,8 @@ private fun CheckCard(
 @Composable
 private fun SpeedCard(speedCheck: SpeedResult) {
     val borderColor = when (speedCheck) {
-        is SpeedResult.Good -> MaterialTheme.colorScheme.primary
-        is SpeedResult.Okay -> MaterialTheme.colorScheme.tertiary
+        is SpeedResult.Good -> SuccessGreen
+        is SpeedResult.Okay -> WarningYellow
         is SpeedResult.Weak -> MaterialTheme.colorScheme.error
         is SpeedResult.Unknown -> MaterialTheme.colorScheme.outline
         else -> MaterialTheme.colorScheme.outlineVariant
@@ -491,7 +485,7 @@ private fun SpeedCard(speedCheck: SpeedResult) {
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = SuccessGreen,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -499,7 +493,7 @@ private fun SpeedCard(speedCheck: SpeedResult) {
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
+                            tint = WarningYellow,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -533,5 +527,3 @@ private fun SpeedCard(speedCheck: SpeedResult) {
         }
     }
 }
-
-
