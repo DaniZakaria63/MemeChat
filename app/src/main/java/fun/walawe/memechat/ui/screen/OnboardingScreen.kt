@@ -1,0 +1,511 @@
+package `fun`.walawe.memechat.ui.screen
+
+import android.app.Activity
+import android.content.Intent
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import `fun`.walawe.memechat.model.OnboardingCheckResult
+import `fun`.walawe.memechat.model.SpeedResult
+import `fun`.walawe.memechat.presenter.OnboardingViewModel
+import kotlinx.coroutines.delay
+
+@Composable
+fun OnboardingScreen(
+    viewModel: OnboardingViewModel = hiltViewModel(),
+    onCompleted: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val pagerState = rememberPagerState(pageCount = { 3 }, initialPage = state.currentPage)
+
+    LaunchedEffect(state.onboardingCompleted) {
+        if (state.onboardingCompleted) {
+            delay(300)
+            onCompleted()
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        viewModel.onPageChanged(pagerState.currentPage)
+    }
+
+    LaunchedEffect(state.currentPage) {
+        pagerState.animateScrollToPage(state.currentPage)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "MemeChat",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                OutlinedButton(
+                    onClick = { viewModel.skipOnboarding() },
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text("Skip")
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { page ->
+                when (page) {
+                    0 -> OnboardingSlide(
+                        icon = "🤖",
+                        title = "Private AI",
+                        description = "All AI processing happens entirely on your device. Your data never leaves your phone — no cloud, no servers, complete privacy.",
+                    )
+                    1 -> OnboardingSlide(
+                        icon = "✨",
+                        title = "Smart & Capable",
+                        description = "Chat about images, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.",
+                    )
+                    2 -> CheckSlide(
+                        storageCheck = state.storageCheck,
+                        ramCheck = state.ramCheck,
+                        speedCheck = state.speedCheck,
+                        onOpenFileManager = {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(
+                                    android.net.Uri.parse("content://com.android.externalstorage.documents/document/primary%3A"),
+                                    "vnd.android.document/directory"
+                                )
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            ctx.startActivity(Intent.createChooser(intent, "Open File Manager"))
+                        },
+                        onCloseApp = {
+                            (ctx as? Activity)?.finishAffinity()
+                        },
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    repeat(3) { index ->
+                        val isSelected = pagerState.currentPage == index
+                        Box(
+                            modifier = Modifier
+                                .size(if (isSelected) 10.dp else 8.dp)
+                                .let { mod ->
+                                    mod.then(
+                                        if (isSelected) {
+                                            Modifier
+                                                .width(24.dp)
+                                                .height(8.dp)
+                                        } else {
+                                            Modifier.size(8.dp)
+                                        }
+                                    )
+                                }
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = if (isSelected)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier
+                                .width(if (isSelected) 32.dp else 8.dp)
+                                .height(8.dp),
+                        ) {}
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                if (pagerState.currentPage < 2) {
+                    Button(
+                        onClick = { viewModel.nextPage() },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Next")
+                    }
+                } else {
+                    val allDone by remember {
+                        derivedStateOf {
+                            state.storageCheck is OnboardingCheckResult.Passed ||
+                                    state.storageCheck is OnboardingCheckResult.Failed
+                        }
+                    }
+                    if (allDone) {
+                        Button(
+                            onClick = { viewModel.getStarted() },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("Get Started")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingSlide(
+    icon: String,
+    title: String,
+    description: String,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = icon,
+            style = MaterialTheme.typography.displayLarge,
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun CheckSlide(
+    storageCheck: OnboardingCheckResult,
+    ramCheck: OnboardingCheckResult,
+    speedCheck: SpeedResult,
+    onOpenFileManager: () -> Unit,
+    onCloseApp: () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Check Your Device",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "We'll verify your device is ready",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+
+        CheckCard(
+            title = "Storage",
+            description = "Need at least 2 GB free space",
+            result = storageCheck,
+            actionLabel = "Open File Manager",
+            actionIcon = Icons.Default.FolderOpen,
+            onAction = onOpenFileManager,
+        )
+        Spacer(Modifier.height(12.dp))
+        CheckCard(
+            title = "Memory",
+            description = "Need at least 1 GB free RAM",
+            result = ramCheck,
+            actionLabel = "Close App",
+            actionIcon = Icons.Default.Close,
+            onAction = onCloseApp,
+        )
+        Spacer(Modifier.height(12.dp))
+        SpeedCard(speedCheck = speedCheck)
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun CheckCard(
+    title: String,
+    description: String,
+    result: OnboardingCheckResult,
+    actionLabel: String,
+    actionIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    onAction: () -> Unit,
+) {
+    val borderColor = when (result) {
+        is OnboardingCheckResult.Passed -> MaterialTheme.colorScheme.primary
+        is OnboardingCheckResult.Failed -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        border = BorderStroke(1.5.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                when (result) {
+                    is OnboardingCheckResult.Pending -> {
+                        Icon(
+                            Icons.Default.HourglassEmpty,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is OnboardingCheckResult.Running -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    is OnboardingCheckResult.Passed -> {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is OnboardingCheckResult.Failed -> {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+
+            if (result is OnboardingCheckResult.Failed) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = result.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onAction,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(actionIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeedCard(speedCheck: SpeedResult) {
+    val borderColor = when (speedCheck) {
+        is SpeedResult.Good -> MaterialTheme.colorScheme.primary
+        is SpeedResult.Okay -> MaterialTheme.colorScheme.tertiary
+        is SpeedResult.Weak -> MaterialTheme.colorScheme.error
+        is SpeedResult.Unknown -> MaterialTheme.colorScheme.outline
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+    val statusText = when (speedCheck) {
+        is SpeedResult.Good -> "Connection looks great ✓"
+        is SpeedResult.Okay -> "Connection looks good ✓"
+        is SpeedResult.Weak -> "Weak connection — download may take a while"
+        is SpeedResult.Unknown -> "Could not measure speed"
+        else -> ""
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        border = BorderStroke(1.5.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Connection Speed",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Testing download speed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                when (speedCheck) {
+                    is SpeedResult.NotChecked -> {
+                        Icon(
+                            Icons.Default.HourglassEmpty,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is SpeedResult.Checking -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    is SpeedResult.Good -> {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is SpeedResult.Okay -> {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is SpeedResult.Weak -> {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    is SpeedResult.Unknown -> {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+
+            if (statusText.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = borderColor,
+                )
+            }
+        }
+    }
+}
+
+
