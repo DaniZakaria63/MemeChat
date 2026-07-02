@@ -1,11 +1,13 @@
 package `fun`.walawe.memechat
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -31,6 +33,8 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var userPreferences: UserPreferences
 
+    private lateinit var navHostController: NavHostController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -52,7 +56,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MemeChatAppTheme {
-                val navHostController = rememberNavController()
+                navHostController = rememberNavController()
                 NavHost(
                     navController = navHostController,
                     startDestination = startDest
@@ -83,6 +87,17 @@ class MainActivity : ComponentActivity() {
                     composable(Screen.About.route) {
                         AboutScreen(onBack = { navHostController.popBackStack() })
                     }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(MemeChatApp.EXTRA_NAVIGATE_TO_DOWNLOAD, false)) {
+            if (::navHostController.isInitialized) {
+                navHostController.navigate(Screen.Download.route) {
+                    popUpTo(0) { inclusive = true }
                 }
             }
         }

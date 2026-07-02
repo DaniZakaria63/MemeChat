@@ -105,7 +105,7 @@ class ModelDownloadService : Service() {
             }
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private suspend fun downloadModels() {
@@ -190,7 +190,7 @@ class ModelDownloadService : Service() {
             }
         } else {
             val completionNotification = notificationManager.buildCompletionNotification()
-            systemNotificationManager.notify(COMPLETION_NOTIFICATION_ID, completionNotification)
+            systemNotificationManager.notify(NOTIFICATION_ID, completionNotification)
             DownloadServiceState.update {
                 it.copy(status = DownloadStatus.Completed)
             }
@@ -248,7 +248,6 @@ class ModelDownloadService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = MemeChatApp.NOTIFICATION_ID
-        private const val COMPLETION_NOTIFICATION_ID = 1002
         private const val ERROR_NOTIFICATION_ID = 1003
         private const val MAX_RETRIES = 3
         private const val PROGRESS_THROTTLE_MS = 200L

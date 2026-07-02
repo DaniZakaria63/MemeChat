@@ -86,9 +86,7 @@ fun OnboardingScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { 3 }, initialPage = state.currentPage)
 
-    val isTablet = LocalConfiguration.current.screenWidthDp >= 600
     var notificationPermissionDenied by remember { mutableStateOf(false) }
-
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -187,7 +185,7 @@ fun OnboardingScreen(
 
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .then(if (isTablet) Modifier.navigationBarsPadding() else Modifier),
+                    .then(Modifier.navigationBarsPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(

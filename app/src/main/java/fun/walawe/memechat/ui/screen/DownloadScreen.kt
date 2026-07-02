@@ -78,6 +78,14 @@ fun DownloadScreen(
         DownloadStatus.Error -> DownloadState.ERROR
     }
 
+    LaunchedEffect(Unit) {
+        if (uiState.status == DownloadStatus.Idle) {
+            DownloadServiceState.reset()
+            val intent = Intent(ctx, ModelDownloadService::class.java)
+            ContextCompat.startForegroundService(ctx, intent)
+        }
+    }
+
     LaunchedEffect(currentState) {
         if (currentState == DownloadState.SUCCESS) {
             delay(700)
