@@ -117,6 +117,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.lottie.compose)
+    implementation(libs.jspeedtest)
     implementation(libs.androidx.material3)
 
     testImplementation(libs.androidx.junit)

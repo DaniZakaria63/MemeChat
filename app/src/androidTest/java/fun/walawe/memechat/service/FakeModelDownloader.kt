@@ -1,10 +1,10 @@
-package `fun`.walawe.memechat.worker
+package `fun`.walawe.memechat.service
 
 import android.content.Context
+import `fun`.walawe.constant.MODEL_DIR_NAME
 import `fun`.walawe.modelpull.model.BadRequestException
 import `fun`.walawe.modelpull.model.CacheModel
 import `fun`.walawe.modelpull.service.ModelDownloader
-import `fun`.walawe.constant.MODEL_DIR_NAME
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 

@@ -164,6 +164,6 @@ class LocalModelDownloader @Inject constructor(
     }
 
     private companion object {
-        const val DEFAULT_BUFFER_SIZE = 8 * 1024
+        const val DEFAULT_BUFFER_SIZE = 5 * 1024 * 1024
     }
 }

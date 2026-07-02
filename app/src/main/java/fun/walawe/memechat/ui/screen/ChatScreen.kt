@@ -98,6 +98,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -992,10 +993,15 @@ private fun LoadingOverlay(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
+        val primaryColor = MaterialTheme.colorScheme.primary
         val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.lottieflow_loading))
         LottieAnimation(
             composition = composition,
-            modifier = Modifier.size(loadingSize.dp),
+            modifier = Modifier
+                .size(loadingSize.dp)
+                .graphicsLayer {
+                    colorFilter = ColorFilter.tint(primaryColor)
+                },
             iterations = Int.MAX_VALUE
         )
     }
