@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -159,7 +160,7 @@ private fun DownloadLoadingScreen(isComplete: Boolean, uiState: DownloadUiState)
             if (!isComplete) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "This may take a moment depending on your connection.",
+                    text = stringResource(R.string.download_connection_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center

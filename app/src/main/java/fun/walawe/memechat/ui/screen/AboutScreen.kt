@@ -1,5 +1,6 @@
 package `fun`.walawe.memechat.ui.screen
 
+import android.annotation.SuppressLint
 import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -60,8 +62,10 @@ import `fun`.walawe.memechat.presenter.SettingsViewModel
 import `fun`.walawe.memechat.ui.components.MarkdownContent
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import `fun`.walawe.memechat.R
 import kotlinx.coroutines.launch
 
+@SuppressLint("LocalContextGetResourceValueCall")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
@@ -79,7 +83,7 @@ fun AboutScreen(
         try {
             context.assets.open("privacy_policy.md").bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            "Privacy policy could not be loaded."
+            context.getString(R.string.about_privacy_policy_error)
         }
     }
 
@@ -193,7 +197,7 @@ private fun AppInfoSection(aboutInfo: AboutInfo?) {
                 )
                 InfoRow(
                     label = "Description",
-                    value = "MemeChat is an on-device AI chat application that operates entirely offline. It can analyze images and memes, maintain persistent conversation memory, and perform web searches when online.",
+                    value = stringResource(R.string.about_app_description),
                     showDivider = false,
                 )
             }
@@ -214,7 +218,7 @@ private fun UpdateNotesSection() {
             SectionTitle("Update Notes")
             InfoRow(
                 label = "",
-                value = "You can insert update notes here.",
+                value = stringResource(R.string.about_update_notes_placeholder),
                 showDivider = false,
             )
         }
@@ -233,14 +237,15 @@ private fun PrivacyPolicySection(onClick: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
         ) {
             SectionTitle("Privacy Policy")
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = onClick,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .padding(start= 12.dp, end=12.dp, top = 0.dp, bottom = 12.dp )
+                    .height(36.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                 ),
@@ -268,7 +273,7 @@ private fun UserDataProtectionSection() {
             SectionTitle("User Data Protection")
             InfoRow(
                 label = "",
-                value = "You can insert user data protection information here.",
+                value = stringResource(R.string.about_data_protection_placeholder),
                 showDivider = false,
             )
         }

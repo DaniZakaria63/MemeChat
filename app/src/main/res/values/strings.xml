@@ -1,3 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MemeChat</string>
+
+    <!-- About -->
+    <string name="about_privacy_policy_error">Privacy policy could not be loaded.</string>
+    <string name="about_app_description">MemeChat is an on-device AI chat application that operates entirely offline. It can analyze images and memes, maintain persistent conversation memory, and perform web searches when online.</string>
+    <string name="about_update_notes_placeholder">
+        - Fully on-device/offline AI\n
+        - Image understanding with MiniCPM-V model support\n
+        - Persistent memory across conversations\n
+        - Web search integration when online\n
+        - Multiple model support with local GGUF files
+    </string>
+    <string name="about_data_protection_placeholder">Our principle about Privacy-First is the core reason to make this app. Our app is different because NOT TAKING any of user data. All user data remain yours and always. Model processing only process your message and previous-relevant message by specific algorithm.
+    Your conversation information ONLY processed in the SAME conversation as context and not link one to another which keep conversation always clean. The LLM model, conversation data, image data is all IN your device. We are keeping our principle at first-hand as always.
+    </string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_desc_private_ai">All AI processing happens entirely on your device. Your data never leaves your phone because your privacy matter.</string>
+    <string name="onboarding_desc_smart_reviewer">Chat about reviewing meme image, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.</string>
+    <string name="onboarding_check_title">Check Your Device</string>
+    <string name="onboarding_check_subtitle">We\'ll verify your device is ready</string>
+    <string name="onboarding_speed_weak">Weak connection — download may take a while</string>
+
+    <!-- Chat -->
+    <string name="chat_delete_message">This will permanently remove the conversation and its images.</string>
+
+    <!-- Download -->
+    <string name="download_connection_note">This may take a moment depending on your connection.</string>
+
+    <!-- Notifications -->
+    <string name="notification_complete_text">All AI models are ready. Start chatting!</string>
+
+    <!-- Download Service -->
+    <string name="model_error_storage">Not enough free storage space. Please free up space and try again.</string>
+    <string name="model_error_server_unreachable">Server unreachable: %s</string>
+    <string name="model_error_download_failed">Failed to download model: %s</string>
+    <string name="model_error_unexpected_download">Unexpected error during download</string>
+    <string name="model_error_unexpected">Unexpected error</string>
+    <string name="model_error_invalid_uri">Invalid model URI or link ID</string>
+
+    <!-- Chat Errors -->
+    <string name="chat_error_model_not_ready">Model is not ready yet</string>
+    <string name="chat_error_model_not_downloaded">Model is not downloaded yet</string>
+    <string name="chat_error_mmproj_not_downloaded">MMProj is not downloaded yet</string>
+    <string name="chat_error_embedding_not_downloaded">Embedding model is not downloaded yet</string>
 </resources>
