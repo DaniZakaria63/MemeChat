@@ -50,6 +50,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,12 +60,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import `fun`.walawe.memechat.model.OnboardingCheckResult
 import `fun`.walawe.memechat.model.SpeedResult
 import `fun`.walawe.memechat.presenter.OnboardingViewModel
+import `fun`.walawe.memechat.service.ModelDownloadService
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val SuccessGreen = Color(0xFF4CAF50)
 private val WarningYellow = Color(0xFFFFC107)
@@ -75,6 +79,7 @@ fun OnboardingScreen(
     onCompleted: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { 3 }, initialPage = state.currentPage)
 
@@ -218,7 +223,11 @@ fun OnboardingScreen(
                     }
                     if (allDone) {
                         Button(
-                            onClick = { viewModel.getStarted() },
+                            onClick = { scope.launch {
+                                viewModel.getStarted()
+                                val intent = Intent(ctx, ModelDownloadService::class.java)
+                                ContextCompat.startForegroundService(ctx, intent)
+                            } },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                         ) {

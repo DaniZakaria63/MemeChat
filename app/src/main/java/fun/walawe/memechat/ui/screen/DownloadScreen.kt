@@ -1,5 +1,6 @@
 package `fun`.walawe.memechat.ui.screen
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,15 +28,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.airbnb.lottie.compose.LottieAnimation
@@ -46,8 +50,11 @@ import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.model.DownloadStatus
 import `fun`.walawe.memechat.model.DownloadUiState
 import `fun`.walawe.memechat.presenter.DownloadViewModel
+import `fun`.walawe.memechat.service.DownloadServiceState
+import `fun`.walawe.memechat.service.ModelDownloadService
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val SuccessGreen = Color(0xFF4CAF50)
 
@@ -56,14 +63,18 @@ fun DownloadScreen(
     viewModel: DownloadViewModel = hiltViewModel(),
     onCompleted: () -> Unit
 ) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val currentState = when (uiState.status) {
         DownloadStatus.Completed -> DownloadState.SUCCESS
         DownloadStatus.Downloading,
         DownloadStatus.Idle -> DownloadState.LOADING
+
         DownloadStatus.InsufficientStorage,
         DownloadStatus.InsufficientRam -> DownloadState.ERROR
+
         DownloadStatus.Error -> DownloadState.ERROR
     }
 
@@ -85,8 +96,15 @@ fun DownloadScreen(
                 message = uiState.errorMessage.orEmpty()
                     .ifEmpty { uiState.compatibilityMessage.orEmpty() }
                     .ifEmpty { "Please retry." },
-                onRetry = viewModel::retryDownload
+                onRetry = {
+                    scope.launch {
+                        DownloadServiceState.reset()
+                        val intent = Intent(ctx, ModelDownloadService::class.java)
+                        ContextCompat.startForegroundService(ctx, intent)
+                    }
+                }
             )
+
             else -> DownloadLoadingScreen(isComplete = false, uiState = uiState)
         }
     }

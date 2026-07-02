@@ -1,11 +1,7 @@
 package `fun`.walawe.memechat.presenter
 
-import android.content.Context
-import android.content.Intent
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.memechat.analyzer.CompatibilityResult
 import `fun`.walawe.memechat.analyzer.ConnectionSpeedChecker
 import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
@@ -13,7 +9,6 @@ import `fun`.walawe.memechat.data.UserPreferences
 import `fun`.walawe.memechat.model.OnboardingCheckResult
 import `fun`.walawe.memechat.model.OnboardingState
 import `fun`.walawe.memechat.model.SpeedResult
-import `fun`.walawe.memechat.service.ModelDownloadService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +21,6 @@ import javax.inject.Inject
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val deviceCompatibilityChecker: DeviceCompatibilityChecker,
     private val connectionSpeedChecker: ConnectionSpeedChecker,
     private val userPreferences: UserPreferences,
@@ -59,16 +53,6 @@ class OnboardingViewModel @Inject constructor(
     }
 
     fun getStarted() {
-        startModelDownloadService()
-        completeOnboarding()
-    }
-
-    private fun startModelDownloadService() {
-        val intent = Intent(context, ModelDownloadService::class.java)
-        ContextCompat.startForegroundService(context, intent)
-    }
-
-    private fun completeOnboarding() {
         userPreferences.setOnboardingCompleted(true)
         _state.update { it.copy(onboardingCompleted = true) }
     }
