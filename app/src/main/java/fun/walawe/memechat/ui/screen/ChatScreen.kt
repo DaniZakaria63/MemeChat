@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -72,7 +73,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +87,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,6 +94,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -113,14 +113,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -134,10 +132,8 @@ import coil.request.ImageRequest
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
-import com.halilibo.richtext.commonmark.Markdown
-import com.halilibo.richtext.ui.BasicRichText
-import com.halilibo.richtext.ui.RichTextThemeProvider
 import `fun`.walawe.memechat.R
+import `fun`.walawe.memechat.ui.components.MarkdownContent
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
@@ -151,6 +147,7 @@ import kotlinx.coroutines.launch
 fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -177,6 +174,7 @@ fun ChatScreen(
         drawerState = drawerState,
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
+        onOpenAbout = onOpenAbout,
         conversations = conversations,
         selectedConversationId = currentConversationId ?: "",
         onNewChat = {
@@ -230,6 +228,7 @@ private fun ChatScreenContent(
     drawerState: DrawerState,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
     conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
@@ -284,7 +283,8 @@ private fun ChatScreenContent(
                     onNewChat = onNewChat,
                     onSelectConversation = onSelectConversation,
                     onDeleteConversation = onDeleteConversation,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
+                    onOpenAbout = onOpenAbout
                 )
             }
         },
@@ -392,7 +392,8 @@ private fun DrawerContent(
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onDeleteConversation: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -448,6 +449,7 @@ private fun DrawerContent(
         ) {
             HorizontalDivider()
             SettingsDrawerItem(onClick = onOpenSettings)
+            AboutDrawerItem(onClick = onOpenAbout)
         }
     }
 }
@@ -504,7 +506,7 @@ private fun ConversationRow(
         AlertDialog(
             onDismissRequest = { showConfirm = false },
             title = { Text("Delete conversation?") },
-            text = { Text("This will permanently remove the conversation and its images.") },
+            text = { Text(stringResource(R.string.chat_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     showConfirm = false
@@ -897,6 +899,43 @@ fun SettingsDrawerItem(onClick: () -> Unit) {
 }
 
 @Composable
+fun AboutDrawerItem(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        color = Color.Transparent,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = "About",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = "About",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun ModelButton(
     onClick: () -> Unit,
     icon: ImageVector,
@@ -1129,31 +1168,6 @@ fun CollapsibleReasoningSection(
         }
     }
 }
-
-
-@Composable
-private fun MarkdownContent(
-    content: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    fontSize: TextUnit = MaterialTheme.typography.bodyMedium.fontSize,
-) {
-    RichTextThemeProvider(
-        textStyleProvider = { TextStyle(color = color, fontSize = fontSize) },
-        contentColorProvider = { color },
-        textStyleBackProvider = { newStyle, children ->
-            CompositionLocalProvider(LocalTextStyle provides newStyle) { children() }
-        },
-        contentColorBackProvider = { newColor, children ->
-            CompositionLocalProvider(LocalContentColor provides newColor) { children() }
-        },
-    ) {
-        BasicRichText(modifier = modifier) {
-            Markdown(content = content)
-        }
-    }
-}
-
 @Preview(showBackground = true)
 @Composable
 private fun ChatScreenPreviewLight() {
@@ -1180,6 +1194,7 @@ private fun ChatScreenPreviewLight() {
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
                 onOpenSettings = {},
+                onOpenAbout = {},
                 conversations = emptyList(),
                 selectedConversationId = "",
                 onNewChat = {},
@@ -1212,6 +1227,7 @@ private fun ChatScreenPreviewDark() {
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
                 onOpenSettings = {},
+                onOpenAbout = {},
                 conversations = emptyList(),
                 selectedConversationId = "",
                 onNewChat = {},

@@ -53,6 +53,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Upload to Google Play
+        if: github.ref_type == 'tag'
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -62,13 +63,13 @@ jobs:
           status: completed
           whatsNewDirectory: whatsnew/
 
-      - name: Create GitHub Release (tagged only)
-        if: github.ref_type == 'tag'
+      - name: Create GitHub Release (master only)
+        if: github.ref_type == 'branch'
         uses: softprops/action-gh-release@v2
         with:
-          name: Release $APP_VERSION_NAME
+          name: CI Build $APP_VERSION_NAME
           body: |
-            ## Release $APP_VERSION_NAME
+            ## CI Build $APP_VERSION_NAME
 
             **Commit:** ${{ github.sha }}
 

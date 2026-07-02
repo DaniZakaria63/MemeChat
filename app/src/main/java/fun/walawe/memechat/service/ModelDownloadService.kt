@@ -13,6 +13,7 @@ import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
 import `fun`.walawe.constant.ModelUrlProvider
 import `fun`.walawe.constant.orZero
 import `fun`.walawe.memechat.MemeChatApp
+import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.analyzer.DeviceCompatibilityChecker
 import `fun`.walawe.memechat.model.DownloadStatus
 import `fun`.walawe.memechat.model.DownloadUiState
@@ -63,7 +64,7 @@ class ModelDownloadService : Service() {
             DownloadServiceState.update {
                 it.copy(
                     status = DownloadStatus.InsufficientStorage,
-                    compatibilityMessage = "Not enough free storage space. Please free up space and try again.",
+                    compatibilityMessage = getString(R.string.model_error_storage),
                 )
             }
             stopSelf()
@@ -94,18 +95,18 @@ class ModelDownloadService : Service() {
             } catch (e: Exception) {
                 Timber.e(e, "Unexpected exception during download")
                 val errorNotification = notificationManager.buildErrorNotification(
-                    e.message ?: "Unexpected error during download"
+                    e.message ?: getString(R.string.model_error_unexpected_download)
                 )
                 systemNotificationManager.notify(ERROR_NOTIFICATION_ID, errorNotification)
                 DownloadServiceState.update {
-                    it.copy(status = DownloadStatus.Error, errorMessage = e.message ?: "Unexpected error")
+                    it.copy(status = DownloadStatus.Error, errorMessage = e.message ?: getString(R.string.model_error_unexpected))
                 }
                 stopForeground(STOP_FOREGROUND_DETACH)
                 stopSelf()
             }
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private suspend fun downloadModels() {
@@ -158,7 +159,7 @@ class ModelDownloadService : Service() {
                         success = true
                         break
                     } else {
-                        lastException = IllegalURILinkIdException("Invalid model URI or link ID")
+                        lastException = IllegalURILinkIdException(getString(R.string.model_error_invalid_uri))
                     }
                 } else {
                     lastException = downloadResult.exceptionOrNull()
@@ -175,8 +176,8 @@ class ModelDownloadService : Service() {
                 val exception = lastException
                 Timber.e(exception, "Download failed for ${target.fileName}")
                 totalError = when (exception) {
-                    is UnknownHostException -> "Server unreachable: ${exception.message ?: "unknown host"}"
-                    else -> "Failed to download model: ${exception?.message ?: "unknown error"}"
+                    is UnknownHostException -> getString(R.string.model_error_server_unreachable, exception.message ?: "unknown host")
+                    else -> getString(R.string.model_error_download_failed, exception?.message ?: "unknown error")
                 }
                 break
             }
@@ -190,7 +191,7 @@ class ModelDownloadService : Service() {
             }
         } else {
             val completionNotification = notificationManager.buildCompletionNotification()
-            systemNotificationManager.notify(COMPLETION_NOTIFICATION_ID, completionNotification)
+            systemNotificationManager.notify(NOTIFICATION_ID, completionNotification)
             DownloadServiceState.update {
                 it.copy(status = DownloadStatus.Completed)
             }
@@ -248,7 +249,6 @@ class ModelDownloadService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = MemeChatApp.NOTIFICATION_ID
-        private const val COMPLETION_NOTIFICATION_ID = 1002
         private const val ERROR_NOTIFICATION_ID = 1003
         private const val MAX_RETRIES = 3
         private const val PROGRESS_THROTTLE_MS = 200L

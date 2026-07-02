@@ -32,8 +32,8 @@ class ConnectionSpeedChecker @Inject constructor() {
                     val mbps = report.transferRateBit.toDouble() / 1_000_000.0
                     Timber.d("Speed test result: %.2f Mbps from %s".format(mbps, url))
                     val speed = when {
-                        mbps >= 20f -> SpeedResult.Good
-                        mbps >= 8f -> SpeedResult.Okay
+                        mbps >= 64f -> SpeedResult.Good
+                        mbps >= 24f -> SpeedResult.Okay
                         mbps > 0f -> SpeedResult.Weak
                         else -> SpeedResult.Unknown
                     }

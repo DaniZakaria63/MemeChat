@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -54,8 +56,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import `fun`.walawe.memechat.R
 import `fun`.walawe.memechat.model.OnboardingCheckResult
 import `fun`.walawe.memechat.model.SpeedResult
 import `fun`.walawe.memechat.presenter.OnboardingViewModel
@@ -84,7 +89,6 @@ fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { 3 }, initialPage = state.currentPage)
 
     var notificationPermissionDenied by remember { mutableStateOf(false) }
-
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -131,13 +135,13 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
         Text(
             text = "MemeChat",
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
@@ -153,12 +157,12 @@ fun OnboardingScreen(
                     0 -> OnboardingSlide(
                         icon = Icons.Default.Psychology,
                         title = "Private AI",
-                        description = "All AI processing happens entirely on your device. Your data never leaves your phone — no cloud, no servers, complete privacy.",
+                        description = stringResource(R.string.onboarding_desc_private_ai),
                     )
                     1 -> OnboardingSlide(
                         icon = Icons.Default.AutoAwesome,
-                        title = "Smart & Capable",
-                        description = "Chat about images, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.",
+                        title = "Smart Reviewer",
+                        description = stringResource(R.string.onboarding_desc_smart_reviewer),
                     )
                     2 -> CheckSlide(
                         storageCheck = state.storageCheck,
@@ -182,7 +186,8 @@ fun OnboardingScreen(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .then(Modifier.navigationBarsPadding()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(
@@ -293,7 +298,7 @@ private fun CheckSlide(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Check Your Device",
+            text = stringResource(R.string.onboarding_check_title),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
@@ -301,7 +306,7 @@ private fun CheckSlide(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "We'll verify your device is ready",
+            text = stringResource(R.string.onboarding_check_subtitle),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -445,9 +450,9 @@ private fun SpeedCard(speedCheck: SpeedResult) {
         else -> MaterialTheme.colorScheme.outlineVariant
     }
     val statusText = when (speedCheck) {
-        is SpeedResult.Good -> "Connection looks great ✓"
-        is SpeedResult.Okay -> "Connection looks good ✓"
-        is SpeedResult.Weak -> "Weak connection — download may take a while"
+        is SpeedResult.Good -> "Connection looks great"
+        is SpeedResult.Okay -> "Connection looks good"
+        is SpeedResult.Weak -> stringResource(R.string.onboarding_speed_weak)
         is SpeedResult.Unknown -> "Could not measure speed"
         else -> ""
     }

@@ -8,6 +8,7 @@ import android.graphics.Color
 import androidx.core.app.NotificationCompat
 import `fun`.walawe.memechat.MainActivity
 import `fun`.walawe.memechat.MemeChatApp
+import `fun`.walawe.memechat.R
 
 class DownloadNotificationManager(private val context: Context) {
 
@@ -73,7 +74,7 @@ class DownloadNotificationManager(private val context: Context) {
 
         return NotificationCompat.Builder(context, MemeChatApp.DOWNLOAD_CHANNEL_ID)
             .setContentTitle("Download Complete")
-            .setContentText("All AI models are ready. Start chatting!")
+            .setContentText(context.getString(R.string.notification_complete_text))
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setColor(Color.parseColor(NOTIFICATION_COLOR))
             .setColorized(true)
