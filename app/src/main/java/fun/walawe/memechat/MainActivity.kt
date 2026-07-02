@@ -16,6 +16,7 @@ import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_LLM
 import `fun`.walawe.constant.MODEL_DISPLAYNAME_MINICPM_MMPROJ
 import `fun`.walawe.memechat.data.UserPreferences
 import `fun`.walawe.memechat.model.Screen
+import `fun`.walawe.memechat.ui.screen.AboutScreen
 import `fun`.walawe.memechat.ui.screen.ChatScreen
 import `fun`.walawe.memechat.ui.screen.OnboardingScreen
 import `fun`.walawe.memechat.ui.screen.SettingsScreen
@@ -71,10 +72,16 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     composable(Screen.Chat.route) {
-                        ChatScreen(onOpenSettings = { navHostController.navigate("Settings") })
+                        ChatScreen(
+                            onOpenSettings = { navHostController.navigate(Screen.Settings.route) },
+                            onOpenAbout = { navHostController.navigate(Screen.About.route) },
+                        )
                     }
                     composable(Screen.Settings.route) {
                         SettingsScreen(onBack = { navHostController.popBackStack() })
+                    }
+                    composable(Screen.About.route) {
+                        AboutScreen(onBack = { navHostController.popBackStack() })
                     }
                 }
             }

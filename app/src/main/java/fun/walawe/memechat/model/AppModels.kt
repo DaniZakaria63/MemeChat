@@ -91,6 +91,7 @@ sealed class Screen(val route: String) {
     object Download : Screen("download")
     object Chat : Screen("chat")
     object Settings : Screen("settings")
+    object About : Screen("about")
 }
 
 sealed interface OnboardingCheckResult {
