@@ -1,8 +1,6 @@
 package `fun`.walawe.memechat.ui.screen
 
 import android.content.res.Configuration
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.HorizontalDivider
@@ -37,12 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -111,9 +106,6 @@ private fun SettingsScreenContent(
                 .padding(vertical = 12.dp, horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (uiState.aboutInfo != null) {
-                item { AboutSection(aboutInfo = uiState.aboutInfo) }
-            }
             item { SettingsSection(title = "Device Info", rows = uiState.deviceInfo) }
             item { SettingsSection(title = "Backend Info", rows = uiState.backendInfo) }
             item { SettingsSection(title = "Model Info", rows = uiState.modelInfo) }
@@ -188,77 +180,6 @@ private fun SettingsSection(title: String, rows: List<Pair<String, String>>) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AboutSection(aboutInfo: AboutInfo) {
-    val uriHandler = LocalUriHandler.current
-    val linkedInUrl = "https://www.linkedin.com/in/dani-zakaria"
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "About",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-            )
-
-            SelectionContainer {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    AboutRow(
-                        label = "App Version",
-                        value = "${aboutInfo.versionName} (build ${aboutInfo.versionCode})",
-                    )
-
-                    AboutRow(label = "Developer", value = "Dani Zakaria")
-
-                    AboutRow(
-                        label = "LinkedIn",
-                        value = linkedInUrl,
-                        onClick = { uriHandler.openUri(linkedInUrl) },
-                    )
-
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AboutRow(label: String, value: String, onClick: (() -> Unit)? = null, showDivider: Boolean = true) {
-    val modifier = if (onClick != null) {
-        Modifier.fillMaxWidth().clickable(onClick = onClick)
-    } else {
-        Modifier.fillMaxWidth()
-    }
-
-    Column(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    if (showDivider) {
-        HorizontalDivider(
-            modifier = Modifier.padding(start = 16.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-        )
     }
 }
 

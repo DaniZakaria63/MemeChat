@@ -1,6 +1,7 @@
 package `fun`.walawe.memechat.ui.screen
 
 import android.content.res.Configuration
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -11,11 +12,15 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBackIosNew
@@ -41,9 +46,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -63,8 +71,9 @@ fun AboutScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showPrivacyPolicy by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val scope = rememberCoroutineScope()
+    val sheetMinHeight = LocalConfiguration.current.screenHeightDp * 0.3f
 
     val privacyPolicyContent = remember {
         try {
@@ -83,8 +92,11 @@ fun AboutScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = sheetMinHeight.dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = 32.dp)
+                    .padding(bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = "Privacy Policy",
@@ -159,6 +171,9 @@ fun AboutScreen(
 
 @Composable
 private fun AppInfoSection(aboutInfo: AboutInfo?) {
+    val uriHandler = LocalUriHandler.current
+    val githubUrl = "https://github.com/DaniZakaria63"
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -166,15 +181,22 @@ private fun AppInfoSection(aboutInfo: AboutInfo?) {
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            SectionTitle("App Info")
-            InfoRow(label = "App Version", value = if (aboutInfo != null) "${aboutInfo.versionName} (build ${aboutInfo.versionCode})" else "Unknown")
-            InfoRow(label = "Developer", value = "Dani Zakaria")
-            InfoRow(
-                label = "Description",
-                value = "MemeChat is an on-device AI chat application that operates entirely offline. It can analyze images and memes, maintain persistent conversation memory, and perform web searches when online.",
-                showDivider = false,
-            )
+        SelectionContainer {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SectionTitle("App Info")
+                InfoRow(label = "App Version", value = if (aboutInfo != null) "${aboutInfo.versionName} (build ${aboutInfo.versionCode})" else "Unknown")
+                InfoRow(label = "Developer", value = "Dani Zakaria")
+                InfoRow(
+                    label = "GitHub",
+                    value = "DaniZakaria63",
+                    onClick = { uriHandler.openUri(githubUrl) },
+                )
+                InfoRow(
+                    label = "Description",
+                    value = "MemeChat is an on-device AI chat application that operates entirely offline. It can analyze images and memes, maintain persistent conversation memory, and perform web searches when online.",
+                    showDivider = false,
+                )
+            }
         }
     }
 }
@@ -265,11 +287,15 @@ private fun SectionTitle(title: String) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, showDivider: Boolean = true) {
+private fun InfoRow(label: String, value: String, onClick: (() -> Unit)? = null, showDivider: Boolean = true) {
+    val modifier = if (onClick != null) {
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         if (label.isNotBlank()) {
             Text(
@@ -282,7 +308,7 @@ private fun InfoRow(label: String, value: String, showDivider: Boolean = true) {
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
     if (showDivider) {

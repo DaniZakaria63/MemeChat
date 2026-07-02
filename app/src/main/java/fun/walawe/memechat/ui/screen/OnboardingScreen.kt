@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -56,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -83,6 +86,7 @@ fun OnboardingScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { 3 }, initialPage = state.currentPage)
 
+    val isTablet = LocalConfiguration.current.screenWidthDp >= 600
     var notificationPermissionDenied by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -131,13 +135,13 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
         Text(
             text = "MemeChat",
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
@@ -157,8 +161,8 @@ fun OnboardingScreen(
                     )
                     1 -> OnboardingSlide(
                         icon = Icons.Default.AutoAwesome,
-                        title = "Smart & Capable",
-                        description = "Chat about images, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.",
+                        title = "Smart Reviewer",
+                        description = "Chat about reviewing meme image, search the web, toggle thinking mode for deeper reasoning. A versatile AI companion in your pocket.",
                     )
                     2 -> CheckSlide(
                         storageCheck = state.storageCheck,
@@ -182,7 +186,8 @@ fun OnboardingScreen(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .then(if (isTablet) Modifier.navigationBarsPadding() else Modifier),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(
@@ -445,8 +450,8 @@ private fun SpeedCard(speedCheck: SpeedResult) {
         else -> MaterialTheme.colorScheme.outlineVariant
     }
     val statusText = when (speedCheck) {
-        is SpeedResult.Good -> "Connection looks great ✓"
-        is SpeedResult.Okay -> "Connection looks good ✓"
+        is SpeedResult.Good -> "Connection looks great"
+        is SpeedResult.Okay -> "Connection looks good"
         is SpeedResult.Weak -> "Weak connection — download may take a while"
         is SpeedResult.Unknown -> "Could not measure speed"
         else -> ""
