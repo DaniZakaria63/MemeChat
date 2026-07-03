@@ -33,7 +33,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore/meme_chat_upload.keystore")
+            storeFile = file("../keystore/meme_chat_upload.jks")
             storePassword = Secrets.get(project, "KEYSTORE_PASSWORD")
             keyAlias = Secrets.get(project, "KEY_ALIAS")
             keyPassword = Secrets.get(project, "KEY_PASSWORD")
