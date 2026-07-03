@@ -35,16 +35,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import `fun`.walawe.memechat.model.AboutInfo
 import `fun`.walawe.memechat.model.SettingsUiState
 import `fun`.walawe.memechat.presenter.SettingsViewModel
 
@@ -195,6 +194,7 @@ private fun SettingsScreenPreviewLight() {
                     backendInfo = listOf("Backend" to "CPU", "Threads" to "4"),
                     modelInfo = listOf("Model" to "Qwen3-VL-Embedding-2B", "Context" to "8192"),
                     cacheInfo = listOf("KV Cache" to "N/A"),
+                    aboutInfo = AboutInfo(versionName = "1.2.3", versionCode = 42),
                 ),
                 onBack = {},
                 onClear = {},
@@ -214,6 +214,7 @@ private fun SettingsScreenPreviewDark() {
                     backendInfo = listOf("Backend" to "CPU", "Threads" to "4"),
                     modelInfo = listOf("Model" to "Qwen3-VL-Embedding-2B", "Context" to "8192"),
                     cacheInfo = listOf("KV Cache" to "N/A"),
+                    aboutInfo = AboutInfo(versionName = "1.2.3", versionCode = 42),
                 ),
                 onBack = {},
                 onClear = {},

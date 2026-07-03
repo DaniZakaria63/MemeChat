@@ -1,0 +1,18 @@
+MemeChat is an on-device AI chat application that operates entirely offline. Users can communicate with the AI, analyze images, and receive intelligent responses without an internet connection.
+
+The application supports meme and image analysis — users can share an image and receive an explanation of its context, cultural references, and humor. Image understanding is powered by the built-in MiniCPM-V model.
+
+Conversation history is preserved through persistent memory, allowing users to resume previous discussions naturally. The AI references past interactions to provide contextually relevant responses over time.
+
+When an internet connection is available, MemeChat can perform web searches to supplement its local knowledge with current information.
+
+The application is suitable for travelers, hikers, and users in remote areas with limited connectivity. Use cases include identifying plants from photos, translating signs, obtaining historical information about landmarks, and general knowledge queries — all without network access.
+
+No account registration is required. All data processing and storage occurs on-device, ensuring user privacy.
+
+Key capabilities:
+- On-device AI chat without internet dependency
+- Image and meme analysis with contextual explanations
+- Persistent conversation memory
+- Web search integration when online
+- Complete privacy — no cloud uploads or data sharing

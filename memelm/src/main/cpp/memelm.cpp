@@ -11,12 +11,11 @@ extern "C" {
 JNIEXPORT jboolean JNICALL
 Java_fun_walawe_memelm_inference_InferenceEngineImpl_nativeInit(
         JNIEnv *env, jobject /* this */,
-        jstring modelPath, jstring mmprojPath, jstring backendPath, jint contextSize,
-        jboolean useVulkan) {
+        jstring modelPath, jstring mmprojPath, jstring backendPath, jint contextSize) {
     const char *model = env->GetStringUTFChars(modelPath, nullptr);
     const char *mmproj = env->GetStringUTFChars(mmprojPath, nullptr);
     const char *backend = env->GetStringUTFChars(backendPath, nullptr);
-    bool ok = g_inference.init(model, mmproj, backend, contextSize, useVulkan);
+    bool ok = g_inference.init(model, mmproj, backend, contextSize);
     env->ReleaseStringUTFChars(modelPath, model);
     env->ReleaseStringUTFChars(mmprojPath, mmproj);
     env->ReleaseStringUTFChars(backendPath, backend);

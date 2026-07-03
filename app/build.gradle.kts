@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
 }
 
 android {
@@ -19,16 +20,31 @@ android {
         applicationId = "fun.walawe.memechat"
         minSdk = 27
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = Secrets.versionCode(project)
+        versionName = Secrets.versionName(project)
 
         testInstrumentationRunner = "fun.walawe.memechat.CustomTestRunner"
         testInstrumentationRunnerArguments["targetApp"] = "dagger.hilt.android.testing.HiltTestApplication"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore/meme_chat_upload.keystore")
+            storePassword = Secrets.get(project, "KEYSTORE_PASSWORD")
+            keyAlias = Secrets.get(project, "KEY_ALIAS")
+            keyPassword = Secrets.get(project, "KEY_PASSWORD")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -58,6 +74,7 @@ dependencies {
     implementation(project(":modelpull"))
     implementation(project(":memelm"))
     implementation(project(":local"))
+    implementation(project(":vector"))
     implementation(project(":mcp"))
 
     implementation(libs.androidx.coroutine)
@@ -72,6 +89,7 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics.ndk)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.timber)
@@ -84,22 +102,22 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.ui.tooling)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.material.icons.extended)
+
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.ui)
+
 
     implementation(libs.richtext.commonmark)
     implementation(libs.richtext.ui.material3)
 
     implementation(libs.androidx.google.fonts)
-    implementation(libs.google.accompanist.permission)
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.lottie.compose)
+    implementation(libs.jspeedtest)
     implementation(libs.androidx.material3)
 
     testImplementation(libs.androidx.junit)

@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [beta, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --scan
+
+      - name: Run lint
+        run: ./gradlew lintDebug
+
+      - name: Upload lint results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: lint-results
+          path: app/build/reports/lint-results-*.html

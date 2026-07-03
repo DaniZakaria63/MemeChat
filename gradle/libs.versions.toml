@@ -5,10 +5,11 @@ richtext = "1.0.0-alpha04"
 guava = "33.6.0-android"
 kotlin = "2.3.20"
 kotlinxSerialization = "1.8.1"
+jspeedtest = "1.32.1"
 coreKtx = "1.18.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
-media3Exoplayer = "1.10.0"
+
 mockkAndroid = "1.14.9"
 tensorflowLite = "2.17.0"
 lifecycleRuntimeKtx = "2.10.0"
@@ -54,6 +55,8 @@ androidx-coroutine = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutin
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-config-ktx = { module = "com.google.firebase:firebase-config" }
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
+firebase-crashlytics-ktx = { module = "com.google.firebase:firebase-crashlytics" }
+firebase-crashlytics-ndk = { module = "com.google.firebase:firebase-crashlytics-ndk" }
 
 androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "nav3Core" }
 androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "nav3Core" }
@@ -70,13 +73,11 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3"}
 androidx-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts", version = "1.11.1"}
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-viewmodel = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "viewmodelCompose"}
-androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics", version.ref = "uiGraphics" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "ui" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
-androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
-androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3Exoplayer" }
-
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
@@ -102,7 +103,9 @@ androidx-work-hilt = { module = "androidx.hilt:hilt-work", version.ref = "hiltWo
 androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltWork" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltCompose" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
-google-accompanist-permission = { module = "com.google.accompanist:accompanist-permissions", version = "0.37.3" }
+jspeedtest = { module = "fr.bmartel:jspeedtest", version.ref = "jspeedtest" }
+timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
+
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 hilt-android-testing = { group = "com.google.dagger", name = "hilt-android-testing", version.ref = "hilt" }
@@ -112,11 +115,6 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "j
 androidx-test-runner = { group = "androidx.test", name = "runner", version = "1.6.2" }
 mockk = { module = "io.mockk:mockk", version = "1.14.9"}
 jetbrains-coroutine-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutine" }
-timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
-litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litertGpu" }
-androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -126,4 +124,5 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version = "3.0.3" }
 #kotlin-android = { id = "org.jetbrains.kotlin.android", version = "2.2.20" } // AGP DEPRECATED

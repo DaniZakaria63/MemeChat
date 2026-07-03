@@ -11,4 +11,10 @@ local.properties
 .kotlin
 ktlint
 ktlint.bat
-./gradle.properties
+secrets.properties
+keystore.properties
+keystore/
+*.keystore
+*.jks
+*.pem
+# app/google-services.json is committed — needed for CI builds

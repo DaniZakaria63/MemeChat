@@ -73,15 +73,48 @@ data class ConversationHistory(
     val time: String,
 )
 
+data class AboutInfo(
+    val versionName: String = "",
+    val versionCode: Int = 0,
+)
+
 data class SettingsUiState(
     val deviceInfo: List<Pair<String, String>> = emptyList(),
     val backendInfo: List<Pair<String, String>> = emptyList(),
     val modelInfo: List<Pair<String, String>> = emptyList(),
     val cacheInfo: List<Pair<String, String>> = emptyList(),
+    val aboutInfo: AboutInfo? = null,
 )
 
 sealed class Screen(val route: String) {
+    object Onboarding : Screen("onboarding")
     object Download : Screen("download")
     object Chat : Screen("chat")
     object Settings : Screen("settings")
+    object About : Screen("about")
 }
+
+sealed interface OnboardingCheckResult {
+    data object Pending : OnboardingCheckResult
+    data object Running : OnboardingCheckResult
+    data class Passed(val message: String) : OnboardingCheckResult
+    data class Failed(val message: String) : OnboardingCheckResult
+}
+
+sealed interface SpeedResult {
+    data object NotChecked : SpeedResult
+    data object Checking : SpeedResult
+    data object Good : SpeedResult
+    data object Okay : SpeedResult
+    data object Weak : SpeedResult
+    data object Unknown : SpeedResult
+}
+
+data class OnboardingState(
+    val currentPage: Int = 0,
+    val storageCheck: OnboardingCheckResult = OnboardingCheckResult.Pending,
+    val ramCheck: OnboardingCheckResult = OnboardingCheckResult.Pending,
+    val speedCheck: SpeedResult = SpeedResult.NotChecked,
+    val onboardingCompleted: Boolean = false,
+)
+

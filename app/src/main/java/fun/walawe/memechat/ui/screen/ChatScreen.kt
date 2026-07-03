@@ -50,12 +50,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -70,7 +72,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +87,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,9 +94,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,21 +107,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
@@ -128,10 +132,8 @@ import coil.request.ImageRequest
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.rememberLottieComposition
-import com.halilibo.richtext.commonmark.Markdown
-import com.halilibo.richtext.ui.BasicRichText
-import com.halilibo.richtext.ui.RichTextThemeProvider
 import `fun`.walawe.memechat.R
+import `fun`.walawe.memechat.ui.components.MarkdownContent
 import `fun`.walawe.memechat.model.ChatMessage
 import `fun`.walawe.memechat.model.ChatRole
 import `fun`.walawe.memechat.model.ChatUiState
@@ -145,6 +147,7 @@ import kotlinx.coroutines.launch
 fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     onOpenSettings: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -171,6 +174,7 @@ fun ChatScreen(
         drawerState = drawerState,
         onOpenDrawer = { scope.launch { drawerState.open() } },
         onOpenSettings = onOpenSettings,
+        onOpenAbout = onOpenAbout,
         conversations = conversations,
         selectedConversationId = currentConversationId ?: "",
         onNewChat = {
@@ -214,7 +218,6 @@ fun ChatScreen(
     )
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatScreenContent(
@@ -225,6 +228,7 @@ private fun ChatScreenContent(
     drawerState: DrawerState,
     onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
     conversations: List<ConversationHistory>,
     selectedConversationId: String,
     onNewChat: () -> Unit,
@@ -242,11 +246,36 @@ private fun ChatScreenContent(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
+            val drawerBorderColor = MaterialTheme.colorScheme.outline
             ModalDrawerSheet(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .fillMaxWidth(0.85f),
-                drawerContainerColor = MaterialTheme.colorScheme.surface
+                    .fillMaxWidth(0.85f)
+                    .drawBehind {
+                        val strokePx = 2.dp.toPx()
+                        val r = 18.dp.toPx()
+                        val w = size.width
+                        val h = size.height
+                        val path = Path().apply {
+                            moveTo(w - r, 0f)
+                            arcTo(
+                                rect = Rect(w - 2 * r, 0f, w, 2 * r),
+                                startAngleDegrees = 270f,
+                                sweepAngleDegrees = 90f,
+                                forceMoveTo = false,
+                            )
+                            lineTo(w, h - r)
+                            arcTo(
+                                rect = Rect(w - 2 * r, h - 2 * r, w, h),
+                                startAngleDegrees = 0f,
+                                sweepAngleDegrees = 90f,
+                                forceMoveTo = false,
+                            )
+                        }
+                        drawPath(path, color = drawerBorderColor, style = Stroke(width = strokePx))
+                    },
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerShape = RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp),
             ) {
                 DrawerContent(
                     conversations = conversations,
@@ -254,7 +283,8 @@ private fun ChatScreenContent(
                     onNewChat = onNewChat,
                     onSelectConversation = onSelectConversation,
                     onDeleteConversation = onDeleteConversation,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
+                    onOpenAbout = onOpenAbout
                 )
             }
         },
@@ -348,6 +378,7 @@ private fun ChatScreenContent(
                 onToggleThinking = onToggleThinking,
                 webSearchMode = webSearchMode,
                 onToggleWebSearchMode = onToggleWebSearchMode,
+                isProcessing = uiState.isProcessing,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -361,7 +392,8 @@ private fun DrawerContent(
     onNewChat: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onDeleteConversation: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -417,6 +449,7 @@ private fun DrawerContent(
         ) {
             HorizontalDivider()
             SettingsDrawerItem(onClick = onOpenSettings)
+            AboutDrawerItem(onClick = onOpenAbout)
         }
     }
 }
@@ -430,16 +463,17 @@ private fun ConversationRow(
     onDelete: () -> Unit,
 ) {
     var showConfirm by remember { mutableStateOf(false) }
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer
+    val containerColor = MaterialTheme.colorScheme.surface
+    val borderStroke = if (isSelected) {
+        BorderStroke(2.dp, MaterialTheme.colorScheme.outline)
     } else {
-        MaterialTheme.colorScheme.surface
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     }
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .background(containerColor)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(12.dp))
+            .border(borderStroke, RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showConfirm = true },
@@ -472,7 +506,7 @@ private fun ConversationRow(
         AlertDialog(
             onDismissRequest = { showConfirm = false },
             title = { Text("Delete conversation?") },
-            text = { Text("This will permanently remove the conversation and its images.") },
+            text = { Text(stringResource(R.string.chat_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     showConfirm = false
@@ -515,14 +549,14 @@ private fun MessageBubble(
         RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomEnd = 18.dp, bottomStart = 4.dp)
     }
     val bubbleColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.colorScheme.surface
     } else {
-        MaterialTheme.colorScheme.tertiaryContainer
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
     }
     val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        MaterialTheme.colorScheme.onSurface
     } else {
-        MaterialTheme.colorScheme.onTertiaryContainer
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
     val alignment = if (isUser) Alignment.End else Alignment.Start
     var collapseState by remember { mutableStateOf(true) }
@@ -551,6 +585,7 @@ private fun MessageBubble(
             shape = bubbleShape,
             colors = CardDefaults.cardColors(containerColor = bubbleColor),
             elevation = if (isUser) CardDefaults.cardElevation(0.dp) else CardDefaults.cardElevation(1.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
             modifier = modifier
         ) {
             Column(
@@ -613,6 +648,7 @@ private fun InputBar(
     onToggleThinking: () -> Unit,
     webSearchMode: WebSearchMode = WebSearchMode.None,
     onToggleWebSearchMode: () -> Unit = {},
+    isProcessing: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var showAttachMenu by remember { mutableStateOf(false) }
@@ -655,6 +691,27 @@ private fun InputBar(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            if (isProcessing) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "Still loading",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             BasicTextField(
@@ -730,19 +787,37 @@ private fun InputBar(
                             )
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        when (webSearchMode) {
-                                            WebSearchMode.Search -> "Search Web"
-                                            WebSearchMode.Fetch -> "Fetch URL"
-                                            WebSearchMode.None -> "Web Search"
-                                        }
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(
+                                            when (webSearchMode) {
+                                                WebSearchMode.Search -> "Search Web"
+                                                WebSearchMode.Fetch -> "Fetch URL"
+                                                WebSearchMode.None -> "Web"
+                                            }
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 },
                                 onClick = {
                                     onToggleWebSearchMode()
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Filled.Search, contentDescription = null)
+                                    Icon(
+                                        imageVector = when (webSearchMode) {
+                                            WebSearchMode.None -> Icons.Filled.Close
+                                            WebSearchMode.Search -> Icons.Filled.Search
+                                            WebSearchMode.Fetch -> Icons.Filled.Language
+                                        },
+                                        contentDescription = null,
+                                    )
                                 }
                             )
                         }
@@ -756,18 +831,29 @@ private fun InputBar(
                     )
                 }
 
+                val sendContainerColor = if (isProcessing) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                } else if (inputText.text.isNotEmpty()) {
+                    MaterialTheme.colorScheme.primaryFixed
+                } else MaterialTheme.colorScheme.secondaryFixedDim
+
+                val sendIconTint = if (isProcessing) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                } else if (inputText.text.isNotEmpty()) {
+                    MaterialTheme.colorScheme.onPrimaryFixed
+                } else MaterialTheme.colorScheme.onSecondaryFixed
+
                 FloatingActionButton(
-                    onClick = onSend,
-                    containerColor = if (inputText.text.isNotEmpty()) {
-                        MaterialTheme.colorScheme.primaryFixed
-                    } else MaterialTheme.colorScheme.secondaryFixedDim,
+                    onClick = { if (!isProcessing) onSend() },
+                    containerColor = sendContainerColor,
                     modifier = Modifier.size(36.dp),
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Send,
                         contentDescription = "Send",
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
+                        tint = sendIconTint,
                     )
                 }
             }
@@ -797,6 +883,43 @@ fun SettingsDrawerItem(onClick: () -> Unit) {
             )
             Text(
                 text = "Settings",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun AboutDrawerItem(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        color = Color.Transparent,
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = "About",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = "About",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
@@ -854,7 +977,6 @@ fun ModelButton(
     }
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun LoopingWebmSnippet(
     modifier: Modifier = Modifier
@@ -910,10 +1032,15 @@ private fun LoadingOverlay(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
+        val primaryColor = MaterialTheme.colorScheme.primary
         val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.lottieflow_loading))
         LottieAnimation(
             composition = composition,
-            modifier = Modifier.size(loadingSize.dp),
+            modifier = Modifier
+                .size(loadingSize.dp)
+                .graphicsLayer {
+                    colorFilter = ColorFilter.tint(primaryColor)
+                },
             iterations = Int.MAX_VALUE
         )
     }
@@ -1041,31 +1168,6 @@ fun CollapsibleReasoningSection(
         }
     }
 }
-
-
-@Composable
-private fun MarkdownContent(
-    content: String,
-    color: Color,
-    modifier: Modifier = Modifier,
-    fontSize: TextUnit = MaterialTheme.typography.bodyMedium.fontSize,
-) {
-    RichTextThemeProvider(
-        textStyleProvider = { TextStyle(color = color, fontSize = fontSize) },
-        contentColorProvider = { color },
-        textStyleBackProvider = { newStyle, children ->
-            CompositionLocalProvider(LocalTextStyle provides newStyle) { children() }
-        },
-        contentColorBackProvider = { newColor, children ->
-            CompositionLocalProvider(LocalContentColor provides newColor) { children() }
-        },
-    ) {
-        BasicRichText(modifier = modifier) {
-            Markdown(content = content)
-        }
-    }
-}
-
 @Preview(showBackground = true)
 @Composable
 private fun ChatScreenPreviewLight() {
@@ -1092,6 +1194,7 @@ private fun ChatScreenPreviewLight() {
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
                 onOpenSettings = {},
+                onOpenAbout = {},
                 conversations = emptyList(),
                 selectedConversationId = "",
                 onNewChat = {},
@@ -1124,6 +1227,7 @@ private fun ChatScreenPreviewDark() {
                 drawerState = rememberDrawerState(DrawerValue.Closed),
                 onOpenDrawer = {},
                 onOpenSettings = {},
+                onOpenAbout = {},
                 conversations = emptyList(),
                 selectedConversationId = "",
                 onNewChat = {},

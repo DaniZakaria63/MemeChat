@@ -2,15 +2,17 @@ package `fun`.walawe.memechat.presenter
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
-import `fun`.walawe.memechat.gguf.GgufQuantReader
+import `fun`.walawe.memechat.analyzer.GgufQuantReader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import `fun`.walawe.memechat.data.ModelRepository
+import `fun`.walawe.memechat.model.AboutInfo
 import `fun`.walawe.memechat.model.SettingsUiState
 import `fun`.walawe.memelm.HardwareAccelerationChecker
 import `fun`.walawe.modelpull.model.CacheKey
@@ -22,7 +24,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-import kotlin.math.roundToInt
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -43,12 +44,14 @@ class SettingsViewModel @Inject constructor(
             val deviceInfo  = buildDeviceInfo()
             val backendInfo = buildBackendInfo()
             val modelInfo   = buildModelInfo()
+            val aboutInfo   = buildAboutInfo()
 
             _uiState.update {
                 it.copy(
                     deviceInfo  = deviceInfo,
                     backendInfo = backendInfo,
                     modelInfo   = modelInfo,
+                    aboutInfo   = aboutInfo,
                 )
             }
         }
@@ -208,6 +211,24 @@ class SettingsViewModel @Inject constructor(
                 add("App Max Heap"   to formatBytes(runtime.maxMemory()))
             }
         }
+
+    private fun buildAboutInfo(): AboutInfo? {
+        val pm = context.packageManager
+        val packageName = context.packageName
+        return try {
+            val info = if (Build.VERSION.SDK_INT >= 33) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION") pm.getPackageInfo(packageName, 0)
+            }
+            AboutInfo(
+                versionName = info.versionName ?: "Unknown",
+                versionCode = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toInt() else info.versionCode,
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     // ── Formatting ────────────────────────────────────────────────────────
     private fun formatBytes(bytes: Long): String {

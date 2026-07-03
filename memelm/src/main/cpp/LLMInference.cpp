@@ -209,13 +209,11 @@ string LLMInference::generateTokens(int max_new_tokens, const TokenCallback* cb)
 
 // Initialization
 bool LLMInference::init(const char* modelPath, const char* mmprojPath,
-                        const char* backendPath, int contextSize, bool useVulkan) {
+                        const char* backendPath, int contextSize) {
 
-    // Register log callback first — without this all llama errors are invisible
     llama_log_set(llamaAndroidLogCallback, nullptr);
-    LOGi("init: model=%s ctx=%d vulkan=%d", modelPath, contextSize, useVulkan ? 1 : 0);
+    LOGi("init: model=%s ctx=%d", modelPath, contextSize);
 
-    // Pre-flight file checks
     if (getFileSize(modelPath) <= 0) {
         LOGe("init: model file missing or unreadable: %s", modelPath);
         return false;
@@ -235,70 +233,66 @@ bool LLMInference::init(const char* modelPath, const char* mmprojPath,
     }
     LOGi("init: pre-flight OK");
 
-    // Backend init
-    // ggml_backend_load_all() activates statically compiled backends (CPU etc.)
-    // It does NOT need a path on Android when GGML_BACKEND_DL is OFF (default).
     ggml_backend_load_all();
     llama_backend_init();
 
     LOGi("init: backends loaded, registered count = %zu", ggml_backend_reg_count());
 
-    // Model load
+    const int n_cpus = static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
+    // Reserve 1-2 cores for the OS/UI.
+    // Token generation is memory-bandwidth-bound — 3 threads saturate the bus.
+    // Prompt processing is compute-bound — use almost all cores.
+    const int n_threads       = std::max(1, std::min(3, n_cpus - 2));
+    const int n_threads_batch = std::max(4, n_cpus - 1);
+
+    LOGi("init: %d CPUs online, %d gen threads, %d batch threads", n_cpus, n_threads, n_threads_batch);
+
     llama_model_params model_params = llama_model_default_params();
     model_params.use_mmap    = true;
     model_params.use_mlock   = false;
-    // n_gpu_layers=0 forces CPU. Mali-G57 MC2 has limited Vulkan compute support.
-    // Re-enable only after confirming ggml_vulkan works on this specific GPU.
     model_params.n_gpu_layers = 0;
     m_gpuUsed = false;
 
     m_model = llama_model_load_from_file(modelPath, model_params);
     if (!m_model) {
-        LOGe("init: llama_model_load_from_file returned null");
+        LOGe("init: model load failed");
         return false;
     }
     LOGi("init: model loaded OK");
-
-    // Context init
-    const int n_threads = std::max(2, std::min(4, (int)sysconf(_SC_NPROCESSORS_ONLN) - 2));
-    LOGi("init: using %d threads", n_threads);
 
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx           = contextSize;
     ctx_params.n_batch         = 512;
     ctx_params.n_ubatch        = 512;
     ctx_params.n_threads       = n_threads;
-    ctx_params.n_threads_batch = n_threads;
+    ctx_params.n_threads_batch = n_threads_batch;
 
     m_ctx = llama_init_from_model(m_model, ctx_params);
     if (!m_ctx) {
-        LOGe("init: llama_init_from_model returned null");
+        LOGe("init: context init failed");
         llama_model_free(m_model);
         m_model = nullptr;
         return false;
     }
 
-    m_vocab   = llama_model_get_vocab(m_model);
-    m_n_past  = 0; // explicit reset on fresh init
+    m_vocab  = llama_model_get_vocab(m_model);
+    m_n_past = 0;
 
-    // Multimodal projector init
     mtmd_context_params mtmd_params = mtmd_context_params_default();
-    mtmd_params.use_gpu       = false; // matches model_params.n_gpu_layers = 0
+    mtmd_params.use_gpu       = false;
     mtmd_params.n_threads     = n_threads;
     mtmd_params.print_timings = false;
 
     m_mtmd_ctx = mtmd_init_from_file(mmprojPath, m_model, mtmd_params);
     if (!m_mtmd_ctx) {
-        LOGe("init: mtmd_init_from_file returned null");
+        LOGe("init: mtmd init failed");
         llama_free(m_ctx);
         llama_model_free(m_model);
         m_ctx   = nullptr;
         m_model = nullptr;
         return false;
     }
-    LOGi("init: mtmd loaded OK");
 
-    // Sampler init
     auto sampler_params       = llama_sampler_chain_default_params();
     sampler_params.no_perf    = true;
     m_smpl                    = llama_sampler_chain_init(sampler_params);

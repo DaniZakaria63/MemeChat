@@ -32,7 +32,6 @@ android {
             cmake {
                 cppFlags += listOf()
                 arguments += "-DLLAMA_DIR=${rootProject.projectDir}/llama.cpp"
-                arguments += "-DGGML_VULKAN=ON"
                 arguments += "-DANDROID_PLATFORM=android-28"
 
                 arguments += "-DCMAKE_BUILD_TYPE=Release"
@@ -67,10 +66,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    packagingOptions {
-        jniLibs{
-            useLegacyPackaging = true
-        }
+    lint {
+        disable.add("QueryAllPackagesPermission")
     }
 
     externalNativeBuild {
