@@ -28,7 +28,7 @@ jobs:
       - name: Decode keystore
         run: |
           mkdir -p keystore
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore/meme_chat_upload.keystore
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore/meme_chat_upload.jks
 
       - name: Set version
         run: |
